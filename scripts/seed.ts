@@ -3,7 +3,7 @@
 // Run with: npm run db:seed
 import { eq } from 'drizzle-orm';
 import { createDb } from '../src/db';
-import { classTypes, locations } from '../src/db/schema';
+import { classTypes, locations, passTypeClasses, passTypes } from '../src/db/schema';
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_URL is not set');
@@ -59,5 +59,38 @@ for (const c of classes) {
   });
 }
 
-console.log(`Venues: ${Object.keys(venueIds).length}, classes: ${classes.length}`);
+// Lara's passes from Bookwhen. Only added when there are no passes yet, so changes
+// made in the admin area are never overwritten. Term passes are added per term in admin.
+const passes = [
+  { name: 'Womanhood 5-class pass', price: 3000, credits: 5, days: 90, onSale: true,
+    classes: ['dance-tone', 'strong-stretched', 'hiit-cardio', 'hiit-strength'],
+    description: 'Five Womanhood or online HIIT classes. Not valid for Monday Double.' },
+  { name: 'Womanhood 10-class pass', price: 6000, credits: 10, days: 180, onSale: true,
+    classes: ['dance-tone', 'strong-stretched', 'hiit-cardio', 'hiit-strength'],
+    description: 'Ten Womanhood or online HIIT classes. Not valid for Monday Double.' },
+  { name: 'PT membership: 45 minutes', price: 9500, credits: null, days: 28, onSale: false,
+    classes: ['hiit-cardio', 'hiit-strength'],
+    description: 'A 45-minute personal training session arranged with Lara, plus unlimited online HIIT for 28 days.' },
+  { name: 'PT membership: 1 hour', price: 11000, credits: null, days: 28, onSale: false,
+    classes: ['hiit-cardio', 'hiit-strength'],
+    description: 'A 1-hour personal training session arranged with Lara, plus unlimited online HIIT for 28 days.' },
+  { name: 'PT membership: 2 × 45 minutes', price: 18000, credits: null, days: 28, onSale: false,
+    classes: ['hiit-cardio', 'hiit-strength'],
+    description: 'Two 45-minute personal training sessions arranged with Lara, plus unlimited online HIIT for 28 days.' },
+];
+
+const existingPasses = await db.select({ id: passTypes.id }).from(passTypes).limit(1);
+if (!existingPasses.length) {
+  const allClasses = await db.select().from(classTypes);
+  for (const p of passes) {
+    const [type] = await db
+      .insert(passTypes)
+      .values({ name: p.name, description: p.description, pricePence: p.price, credits: p.credits, validity: 'days', validityDays: p.days, onSale: p.onSale })
+      .returning();
+    const ids = allClasses.filter((c) => p.classes.includes(c.slug)).map((c) => c.id);
+    if (ids.length) await db.insert(passTypeClasses).values(ids.map((classTypeId) => ({ passTypeId: type.id, classTypeId })));
+  }
+}
+
+console.log(`Venues: ${Object.keys(venueIds).length}, classes: ${classes.length}, passes: ${existingPasses.length ? 'already set up' : passes.length}`);
 process.exit(0);

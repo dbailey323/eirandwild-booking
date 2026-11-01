@@ -91,10 +91,12 @@ export const bookings = pgTable(
     status: text('status').notNull().default('pending'),
     amountPence: integer('amount_pence').notNull(),
     refundedPence: integer('refunded_pence').notNull().default(0),
-    // stripe | free | cash | manual
+    // stripe | free | cash | manual | pass
     paymentMethod: text('payment_method').notNull().default('stripe'),
     stripeCheckoutId: text('stripe_checkout_id'),
     stripePaymentIntentId: text('stripe_payment_intent_id'),
+    // The client's pass that paid for this booking (paymentMethod 'pass')
+    passId: text('pass_id'),
     // Secret used in the "manage your booking" link sent by email
     manageToken: text('manage_token').notNull().unique(),
     holdExpiresAt: timestamp('hold_expires_at', { withTimezone: true }),
@@ -135,6 +137,74 @@ export const waitlist = pgTable('waitlist', {
 export const adminLoginTokens = pgTable('admin_login_tokens', {
   tokenHash: text('token_hash').primaryKey(),
   email: text('email').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+});
+
+// ---------------------------------------------------------------- Stage 2: passes
+
+// Something Lara sells (or gives away) that pays for classes instead of paying each time:
+// a 5-class pass, a term pass or a PT membership with unlimited HIIT.
+export const passTypes = pgTable('pass_types', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  pricePence: integer('price_pence').notNull(),
+  // Number of classes it covers; null means unlimited
+  credits: integer('credits'),
+  // days: valid for validityDays from purchase | dates: valid between validFrom and validUntil
+  validity: text('validity').notNull().default('days'),
+  validityDays: integer('validity_days'),
+  // London dates, YYYY-MM-DD (both inclusive)
+  validFrom: text('valid_from'),
+  validUntil: text('valid_until'),
+  // Shown for sale on the booking site; off for passes Lara only gives out herself
+  onSale: boolean('on_sale').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Which classes a pass type can be used for
+export const passTypeClasses = pgTable(
+  'pass_type_classes',
+  {
+    passTypeId: integer('pass_type_id').notNull().references(() => passTypes.id),
+    classTypeId: integer('class_type_id').notNull().references(() => classTypes.id),
+  },
+  (t) => [uniqueIndex('pass_type_classes_idx').on(t.passTypeId, t.classTypeId)],
+);
+
+// A pass belonging to a client
+export const customerPasses = pgTable(
+  'customer_passes',
+  {
+    id: text('id').primaryKey(),
+    customerId: integer('customer_id').notNull().references(() => customers.id),
+    passTypeId: integer('pass_type_id').notNull().references(() => passTypes.id),
+    // pending (awaiting payment) | active | cancelled | expired (unpaid checkout)
+    status: text('status').notNull().default('pending'),
+    // Copied from the pass type when issued, so Lara can adjust one client's pass; null = unlimited
+    creditsTotal: integer('credits_total'),
+    creditsUsed: integer('credits_used').notNull().default(0),
+    startsAt: timestamp('starts_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    amountPence: integer('amount_pence').notNull(),
+    refundedPence: integer('refunded_pence').notNull().default(0),
+    // stripe | free | cash | manual
+    paymentMethod: text('payment_method').notNull().default('stripe'),
+    stripeCheckoutId: text('stripe_checkout_id'),
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    notes: text('notes').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  },
+  (t) => [index('customer_passes_customer_idx').on(t.customerId)],
+);
+
+// One-time sign-in links for clients' accounts
+export const customerLoginTokens = pgTable('customer_login_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  customerId: integer('customer_id').notNull().references(() => customers.id),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
 });

@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { and, asc, eq, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import * as schema from '@/db/schema';
-import { bookings, classTypes, courses, customers, locations, registrations, sessions, waitlist } from '@/db/schema';
+import { bookings, classTypes, courses, customerPasses, customers, locations, registrations, sessions, waitlist } from '@/db/schema';
 import { HOLD_MINUTES, canRefund, cancellationDeadline, proRataPrice } from './policy';
 import { addLondonDays, addMinutes, londonDateKey, londonToUtc } from './time';
 
@@ -238,7 +238,7 @@ export async function createCourseBooking(
   });
 }
 
-async function assertNotAlreadyBooked(db: Db, customerId: number, sessionIds: number[], now: Date) {
+export async function assertNotAlreadyBooked(db: Db, customerId: number, sessionIds: number[], now: Date) {
   const existing = await db
     .select({ id: registrations.id })
     .from(registrations)
@@ -321,7 +321,8 @@ export async function describeBooking(db: Db, booking: Booking) {
 
 export type RefundFn = (paymentIntentId: string, amountPence: number) => Promise<void>;
 
-export type CancelResult = { refundedPence: number; freedSessionIds: number[] };
+// creditReturned: a class booked with a pass went back on the pass
+export type CancelResult = { refundedPence: number; freedSessionIds: number[]; creditReturned: boolean };
 
 // Cancels a whole booking. Customers get a refund only within Lara's notice periods;
 // Lara (byAdmin) can choose to refund regardless.
@@ -344,6 +345,14 @@ export async function cancelBooking(
     if (!booking.stripePaymentIntentId) throw new BookingError('no_payment', 'No card payment found to refund.');
     await opts.refund(booking.stripePaymentIntentId, refundPence);
   }
+  // Classes booked with a pass go back on the pass on the same terms as a refund
+  const creditReturned = booking.status === 'confirmed' && booking.paymentMethod === 'pass' && !!booking.passId && (!!opts.forceRefund || eligible);
+  if (creditReturned) {
+    await db
+      .update(customerPasses)
+      .set({ creditsUsed: sql`greatest(${customerPasses.creditsUsed} - 1, 0)` })
+      .where(eq(customerPasses.id, booking.passId!));
+  }
   await db
     .update(bookings)
     .set({ status: 'cancelled', cancelledAt: now, refundedPence: booking.refundedPence + refundPence, holdExpiresAt: null })
@@ -353,7 +362,7 @@ export async function cancelBooking(
     .set({ status: 'cancelled' })
     .where(and(eq(registrations.bookingId, bookingId), eq(registrations.status, 'active')))
     .returning({ sessionId: registrations.sessionId });
-  return { refundedPence: refundPence, freedSessionIds: regs.map((r) => r.sessionId) };
+  return { refundedPence: refundPence, freedSessionIds: regs.map((r) => r.sessionId), creditReturned };
 }
 
 // ---------------------------------------------------------------- waiting list
@@ -539,14 +548,14 @@ export async function cancelSession(db: Db, sessionId: number, opts: { refund: R
   if (!session) throw new BookingError('not_found', 'Class not found');
   const attendees = await register(db, sessionId);
   await db.update(sessions).set({ status: 'cancelled' }).where(eq(sessions.id, sessionId));
-  const results: { email: string; name: string; refundedPence: number; kind: string }[] = [];
+  const results: { email: string; name: string; refundedPence: number; kind: string; creditReturned: boolean }[] = [];
   for (const a of attendees) {
     if (a.booking.kind === 'session') {
       const r = await cancelBooking(db, a.booking.id, { refund: opts.refund, byAdmin: true, forceRefund: true, now });
-      results.push({ email: a.customer.email, name: a.customer.name, refundedPence: r.refundedPence, kind: 'session' });
+      results.push({ email: a.customer.email, name: a.customer.name, refundedPence: r.refundedPence, kind: 'session', creditReturned: r.creditReturned });
     } else {
       await db.update(registrations).set({ status: 'cancelled' }).where(eq(registrations.id, a.registration.id));
-      results.push({ email: a.customer.email, name: a.customer.name, refundedPence: 0, kind: 'course' });
+      results.push({ email: a.customer.email, name: a.customer.name, refundedPence: 0, kind: 'course', creditReturned: false });
     }
   }
   return { session, affected: results };

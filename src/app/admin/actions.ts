@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { getDb } from '@/db';
-import { classTypes, locations, sessions } from '@/db/schema';
+import { classTypes, customers, locations, sessions } from '@/db/schema';
 import { createLoginToken, requireAdmin } from '@/lib/auth';
 import {
   BookingError,
@@ -16,10 +16,12 @@ import {
   getBooking,
   moveRegistration,
   setAttended,
+  upsertCustomer,
 } from '@/lib/booking';
+import { adjustPass, bookWithPass, cancelPass, createPassType, grantPass, setPassTypeOnSale } from '@/lib/passes';
 import { sendAdminLoginLink, sendBookingCancelled, sendBookingConfirmed, sendClassCancelled } from '@/lib/email';
 import { poundsToPence } from '@/lib/money';
-import { notifyWaitlist, safely } from '@/lib/notify';
+import { notifyPassReady, notifyWaitlist, passLeftText, safely } from '@/lib/notify';
 import { appUrl, refundPayment } from '@/lib/stripe';
 
 export type AdminState = { error?: string; ok?: string };
@@ -150,7 +152,7 @@ export async function cancelSessionAction(form: FormData) {
     const { session, affected } = await cancelSession(getDb(), id, { refund: refundPayment });
     const [type] = await getDb().select().from(classTypes).where(eq(classTypes.id, session.classTypeId));
     for (const a of affected) {
-      await safely(() => sendClassCancelled(a.email, a.name, type?.name ?? 'Your class', session.startsAt, a.refundedPence, a.kind));
+      await safely(() => sendClassCancelled(a.email, a.name, type?.name ?? 'Your class', session.startsAt, a.refundedPence, a.kind, a.creditReturned));
     }
   } catch (error) {
     back(`/admin/class/${id}`, { error: errorText(error) });
@@ -168,9 +170,10 @@ export async function cancelBookingAction(form: FormData) {
   try {
     const result = await cancelBooking(db, bookingId, { refund: refundPayment, byAdmin: true, forceRefund: form.get('refund') === 'on' });
     const desc = await getBooking(db, bookingId);
-    if (desc && form.get('notify') === 'on') await safely(() => sendBookingCancelled(desc, result.refundedPence));
+    if (desc && form.get('notify') === 'on') await safely(() => sendBookingCancelled(desc, result.refundedPence, result.creditReturned));
     await notifyWaitlist(db, result.freedSessionIds);
     if (result.refundedPence > 0) message = `Booking cancelled and £${(result.refundedPence / 100).toFixed(2)} refunded`;
+    else if (result.creditReturned) message = 'Booking cancelled and the class put back on their pass';
   } catch (error) {
     back(`/admin/class/${sessionId}`, { error: errorText(error) });
   }
@@ -182,24 +185,28 @@ export async function addBookingAction(form: FormData) {
   await requireAdmin();
   const sessionId = num(form, 'sessionId');
   const db = getDb();
+  const method = (str(form, 'method') || 'cash') as 'cash' | 'free' | 'manual' | 'pass';
+  const customer = { name: str(form, 'name'), email: str(form, 'email'), phone: str(form, 'phone') };
   try {
-    const method = (str(form, 'method') || 'cash') as 'cash' | 'free' | 'manual';
-    const booking = await addManualBooking(db, {
-      sessionId,
-      customer: { name: str(form, 'name'), email: str(form, 'email'), phone: str(form, 'phone') },
-      method,
-      amountPence: str(form, 'amount') ? poundsToPence(str(form, 'amount')) : 0,
-      notes: str(form, 'notes'),
-    });
+    const booking = method === 'pass'
+      ? await bookWithPass(db, { sessionId, customerId: (await upsertCustomer(db, customer)).id, byAdmin: true })
+      : await addManualBooking(db, {
+          sessionId,
+          customer,
+          method,
+          amountPence: str(form, 'amount') ? poundsToPence(str(form, 'amount')) : 0,
+          notes: str(form, 'notes'),
+        });
     if (form.get('notify') === 'on') {
       const desc = await getBooking(db, booking.id);
-      if (desc) await safely(() => sendBookingConfirmed(desc));
+      const left = await passLeftText(db, booking.passId);
+      if (desc) await safely(() => sendBookingConfirmed(desc, left));
     }
   } catch (error) {
     back(`/admin/class/${sessionId}`, { error: errorText(error) });
   }
   revalidatePath(`/admin/class/${sessionId}`);
-  back(`/admin/class/${sessionId}`, { ok: 'Booking added' });
+  back(`/admin/class/${sessionId}`, { ok: method === 'pass' ? 'Booked with their pass' : 'Booking added' });
 }
 
 export async function moveBookingAction(form: FormData) {
@@ -222,4 +229,110 @@ export async function attendedAction(form: FormData) {
   await setAttended(getDb(), num(form, 'registrationId'), form.get('attended') === 'true');
   revalidatePath(`/admin/class/${sessionId}`);
   redirect(`/admin/class/${sessionId}`);
+}
+
+// ---------------------------------------------------------------- passes
+
+export async function createPassTypeAction(form: FormData) {
+  await requireAdmin();
+  const validity = str(form, 'validity') === 'dates' ? 'dates' : 'days';
+  try {
+    await createPassType(getDb(), {
+      name: str(form, 'name'),
+      description: str(form, 'description'),
+      pricePence: poundsToPence(str(form, 'price') || '0'),
+      credits: str(form, 'credits') ? num(form, 'credits') : null,
+      validity,
+      validityDays: validity === 'days' ? num(form, 'days') : null,
+      validFrom: validity === 'dates' ? str(form, 'from') : null,
+      validUntil: validity === 'dates' ? str(form, 'until') : null,
+      onSale: form.get('onSale') === 'on',
+      classTypeIds: form.getAll('classTypeIds').map(Number).filter(Boolean),
+    });
+  } catch (error) {
+    back('/admin/passes', { error: errorText(error) });
+  }
+  revalidatePath('/admin/passes');
+  back('/admin/passes', { ok: `${str(form, 'name')} added` });
+}
+
+export async function passTypeOnSaleAction(form: FormData) {
+  await requireAdmin();
+  await setPassTypeOnSale(getDb(), num(form, 'passTypeId'), form.get('onSale') === 'true');
+  revalidatePath('/admin/passes');
+  back('/admin/passes', { ok: form.get('onSale') === 'true' ? 'Pass is on sale' : 'Pass taken off sale' });
+}
+
+export async function grantPassAction(form: FormData) {
+  await requireAdmin();
+  const customerId = num(form, 'customerId');
+  const path = `/admin/clients/${customerId}`;
+  const db = getDb();
+  try {
+    const method = (str(form, 'method') || 'free') as 'free' | 'cash' | 'manual';
+    const pass = await grantPass(db, {
+      passTypeId: num(form, 'passTypeId'),
+      customerId,
+      method,
+      amountPence: str(form, 'amount') ? poundsToPence(str(form, 'amount')) : 0,
+      notes: str(form, 'notes'),
+    });
+    if (form.get('notify') === 'on') await notifyPassReady(db, pass.id);
+  } catch (error) {
+    back(path, { error: errorText(error) });
+  }
+  revalidatePath(path);
+  back(path, { ok: 'Pass added' });
+}
+
+export async function adjustPassAction(form: FormData) {
+  await requireAdmin();
+  const path = `/admin/clients/${num(form, 'customerId')}`;
+  try {
+    await adjustPass(getDb(), str(form, 'passId'), {
+      creditsTotal: form.has('credits') ? (str(form, 'credits') ? num(form, 'credits') : null) : undefined,
+      expiresOn: str(form, 'expiresOn') || null,
+      notes: str(form, 'notes'),
+    });
+  } catch (error) {
+    back(path, { error: errorText(error) });
+  }
+  revalidatePath(path);
+  back(path, { ok: 'Pass updated' });
+}
+
+export async function cancelPassAction(form: FormData) {
+  await requireAdmin();
+  const path = `/admin/clients/${num(form, 'customerId')}`;
+  let message = 'Pass cancelled';
+  try {
+    const refundPence = str(form, 'refund') ? poundsToPence(str(form, 'refund')) : 0;
+    const result = await cancelPass(getDb(), str(form, 'passId'), { refundPence, refund: refundPayment });
+    if (result.refundedPence > 0) message = `Pass cancelled and £${(result.refundedPence / 100).toFixed(2)} refunded`;
+  } catch (error) {
+    back(path, { error: errorText(error) });
+  }
+  revalidatePath(path);
+  back(path, { ok: message });
+}
+
+export async function updateClientAction(form: FormData) {
+  await requireAdmin();
+  const id = num(form, 'customerId');
+  const name = str(form, 'name');
+  if (!name) back(`/admin/clients/${id}`, { error: 'Enter a name' });
+  await getDb().update(customers).set({ name, phone: str(form, 'phone') }).where(eq(customers.id, id));
+  revalidatePath(`/admin/clients/${id}`);
+  back(`/admin/clients/${id}`, { ok: 'Details saved' });
+}
+
+export async function addClientAction(form: FormData) {
+  await requireAdmin();
+  let id = 0;
+  try {
+    id = (await upsertCustomer(getDb(), { name: str(form, 'name'), email: str(form, 'email'), phone: str(form, 'phone') })).id;
+  } catch (error) {
+    back('/admin/clients', { error: errorText(error) });
+  }
+  back(`/admin/clients/${id}`, { ok: 'Client saved' });
 }

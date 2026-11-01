@@ -18,7 +18,7 @@ import {
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; error?: string }> };
 
-const METHOD: Record<string, string> = { stripe: 'Card', cash: 'Cash', free: 'Free', manual: 'Manual' };
+const METHOD: Record<string, string> = { stripe: 'Card', cash: 'Cash', free: 'Free', manual: 'Manual', pass: 'Pass' };
 
 export default async function AdminClassPage({ params, searchParams }: Props) {
   const id = Number((await params).id);
@@ -82,7 +82,7 @@ export default async function AdminClassPage({ params, searchParams }: Props) {
                     </form>
                   </td>
                   <td>
-                    <strong>{customer.name}</strong>
+                    <Link href={`/admin/clients/${customer.id}`}><strong>{customer.name}</strong></Link>
                     {booking.kind === 'course' && <div className="muted">Course booking</div>}
                     {booking.notes && <div className="muted">{booking.notes}</div>}
                   </td>
@@ -91,7 +91,7 @@ export default async function AdminClassPage({ params, searchParams }: Props) {
                     {customer.phone && <div><a href={`tel:${customer.phone}`}>{customer.phone}</a></div>}
                   </td>
                   <td>
-                    {formatPence(booking.amountPence)} <span className="muted">{METHOD[booking.paymentMethod] ?? ''}</span>
+                    {booking.paymentMethod === 'pass' ? 'Pass' : <>{formatPence(booking.amountPence)} <span className="muted">{METHOD[booking.paymentMethod] ?? ''}</span></>}
                   </td>
                   <td>
                     <details>
@@ -114,6 +114,9 @@ export default async function AdminClassPage({ params, searchParams }: Props) {
                       <form action={cancelBookingAction} style={{ marginTop: 10 }}>
                         <input type="hidden" name="sessionId" value={id} />
                         <input type="hidden" name="bookingId" value={booking.id} />
+                        {booking.paymentMethod === 'pass' && (
+                          <label className="check"><input type="checkbox" name="refund" defaultChecked /> Put the class back on their pass</label>
+                        )}
                         {booking.paymentMethod === 'stripe' && (
                           <label className="check"><input type="checkbox" name="refund" defaultChecked /> Refund {formatPence(booking.amountPence - booking.refundedPence)} to card</label>
                         )}
@@ -147,6 +150,7 @@ export default async function AdminClassPage({ params, searchParams }: Props) {
                     How they paid
                     <select name="method" defaultValue="cash">
                       <option value="cash">Cash / bank transfer</option>
+                      <option value="pass">Use their pass</option>
                       <option value="free">Free (gift, prize, make-up)</option>
                       <option value="manual">Other</option>
                     </select>
@@ -184,7 +188,7 @@ export default async function AdminClassPage({ params, searchParams }: Props) {
           <details className="panel">
             <summary>Cancel this class</summary>
             <div>
-              <p>Everyone booked will be emailed. Pay-as-you-go bookings are refunded in full; course bookings keep their other sessions, so you can offer a make-up session.</p>
+              <p>Everyone booked will be emailed. Pay-as-you-go bookings are refunded in full and pass bookings go back on the pass; course bookings keep their other sessions, so you can offer a make-up session.</p>
               <form action={cancelSessionAction}>
                 <input type="hidden" name="sessionId" value={id} />
                 <button className="btn danger" type="submit">Cancel class and refund</button>

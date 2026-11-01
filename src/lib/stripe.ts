@@ -1,5 +1,6 @@
 import Stripe from 'stripe';
 import type { BookingDescription } from './booking';
+import type { CustomerPass, PassType } from './passes';
 import { CHECKOUT_MINUTES } from './policy';
 import { formatDayShort, formatTime } from './time';
 
@@ -50,4 +51,31 @@ export async function createCheckout(desc: BookingDescription, cancelPath: strin
 
 export async function refundPayment(paymentIntentId: string, amountPence: number): Promise<void> {
   await stripe().refunds.create({ payment_intent: paymentIntentId, amount: amountPence });
+}
+
+// Checkout for buying a pass. The webhook activates it once paid.
+export async function createPassCheckout(
+  pass: CustomerPass,
+  type: PassType,
+  email: string,
+  summary: string,
+  cancelPath: string,
+): Promise<{ id: string; url: string }> {
+  const checkout = await stripe().checkout.sessions.create({
+    mode: 'payment',
+    customer_email: email,
+    line_items: [
+      {
+        quantity: 1,
+        price_data: { currency: 'gbp', unit_amount: pass.amountPence, product_data: { name: type.name, description: summary } },
+      },
+    ],
+    metadata: { pass_id: pass.id },
+    payment_intent_data: { metadata: { pass_id: pass.id } },
+    expires_at: Math.floor(Date.now() / 1000) + CHECKOUT_MINUTES * 60,
+    success_url: `${appUrl()}/passes/done/${pass.id}`,
+    cancel_url: `${appUrl()}${cancelPath}`,
+  });
+  if (!checkout.url) throw new Error('Stripe did not return a checkout link');
+  return { id: checkout.id, url: checkout.url };
 }

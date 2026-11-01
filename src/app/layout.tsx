@@ -24,7 +24,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span className="brand-name">Eir &amp; Wild</span>
               <span className="brand-sub">Bookings</span>
             </Link>
-            <a className="header-link" href="https://www.eirandwild.co.uk">Main website</a>
+            <nav className="header-links" aria-label="Main">
+              <Link className="header-link" href="/passes">Passes</Link>
+              <Link className="header-link" href="/account">My account</Link>
+              <a className="header-link" href="https://www.eirandwild.co.uk">Main website</a>
+            </nav>
           </div>
         </header>
         <main className="container">{children}</main>

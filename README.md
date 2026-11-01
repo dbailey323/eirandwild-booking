@@ -2,7 +2,7 @@
 
 Lara's own booking system for Eir & Wild classes, courses and baby massage, at **book.eirandwild.co.uk**.
 
-This is **Stage 1**: pay-as-you-go classes, courses, card payments, waiting lists, emails and Lara's admin area. Class passes, PT memberships and gift vouchers come in later stages, and Bookwhen stays live until everything is tested.
+**Stage 1** covers pay-as-you-go classes, courses, card payments, waiting lists, emails and Lara's admin area. **Stage 2** adds class passes, term passes, PT memberships and client accounts. Gift vouchers and moving clients over from Bookwhen come in Stage 3, and Bookwhen stays live until everything is tested.
 
 ## What it does
 
@@ -16,13 +16,19 @@ This is **Stage 1**: pay-as-you-go classes, courses, card payments, waiting list
   - courses need **48 hours** before the course starts
 - Waiting list on full classes. Everyone waiting is emailed when a place frees up.
 - Reminder email the day before each class.
+- **Passes** at `/passes`: buy a class pass (e.g. 5 classes in 90 days) or a term pass (between set dates) by card.
+- **Client accounts** at `/account`, signed in by an emailed link with no password: see your passes (classes left, use-by date) and upcoming bookings.
+- **Book with my pass**: signed-in clients with a pass that covers a class book it in one tap. Cancelling at least 4 hours before puts the class back on the pass.
 
 **For Lara** (at `/admin`, signed in by an emailed link with no password)
 - Upcoming classes with numbers booked, and past classes.
 - Each class's register: tick who's there, see contact details and how they paid.
 - Add weekly classes (e.g. every Monday for 8 weeks), courses (with optional pro-rata pricing and drop-in places), new class types and venues.
 - Add someone herself (cash, gift, prize or make-up session), move someone to another class, or cancel a booking with or without a refund.
-- Cancel a class: everyone is emailed, pay-as-you-go bookings are refunded in full, and course bookings keep their other sessions.
+- Cancel a class: everyone is emailed, pay-as-you-go bookings are refunded in full, pass bookings go back on the pass, and course bookings keep their other sessions.
+- **Passes**: add pass types (price, number of classes or unlimited, how long they last or set term dates, which classes they cover) and put them on or off sale.
+- **Clients**: search clients, see their passes and bookings, give someone a pass (a prize, a PT membership, or one paid in cash), change a pass's classes or end date, or cancel a pass with an optional refund.
+- Add someone to a class using their pass.
 
 **For the main website**
 - `GET /api/public/schedule` returns upcoming classes with spaces left, so eirandwild.co.uk can show live dates from here instead of Bookwhen.
@@ -67,8 +73,12 @@ npm run typecheck
 
 After changing `src/db/schema.ts`, run `npm run db:generate` to create a new migration, then `npm run db:migrate`.
 
-## Not in Stage 1 yet
+## Passes set up automatically
 
-- Class passes (5/10-class and term passes), PT memberships with unlimited HIIT, and gift vouchers.
-- Client accounts. For now, clients manage bookings from the link in their emails.
+The first build adds Lara's Bookwhen passes: the Womanhood 5-class (£30, 90 days) and 10-class (£60, 180 days) passes for Dance & Tone, Strong & Stretched and online HIIT (not Monday Double), and three PT memberships with unlimited online HIIT for 28 days (£95, £110, £180), which are not on sale and are given from a client's page. Motherhood term passes are added each term in **Admin → Passes**.
+
+## Still to come (Stage 3)
+
+- Gift vouchers.
 - Importing clients from Bookwhen.
+- Switching eirandwild.co.uk to show dates from this site instead of Bookwhen.

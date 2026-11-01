@@ -12,6 +12,7 @@ export const COURSE_CANCEL_HOURS = 48;
 export const REFUND_POLICY = [
   'Refunds are given on pay-as-you-go classes cancelled at least 4 hours before the class starts.',
   'For courses, let us know at least 48 hours before the course starts to receive a refund.',
+  'Classes booked with a pass go back on your pass if cancelled at least 4 hours before the class starts.',
   'Cancellations within these times cannot be refunded or transferred.',
 ];
 
@@ -30,3 +31,6 @@ export function proRataPrice(coursePricePence: number, totalSessions: number, re
   const raw = (coursePricePence * remainingSessions) / totalSessions;
   return Math.round(raw / 50) * 50;
 }
+
+// Passes are not refundable once bought, but Lara can choose to refund one herself
+export const PASS_POLICY = 'Passes can be used for the classes listed, until the end date shown. Passes are non-refundable and cannot be transferred.';

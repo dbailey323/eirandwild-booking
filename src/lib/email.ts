@@ -100,8 +100,10 @@ export function manageLink(desc: BookingDescription): string {
   return `${appUrl()}/booking/${desc.booking.manageToken}`;
 }
 
-export async function sendBookingConfirmed(desc: BookingDescription) {
-  const paid = desc.booking.amountPence > 0 ? `<p><strong>Paid:</strong> ${formatPence(desc.booking.amountPence)}</p>` : '';
+export async function sendBookingConfirmed(desc: BookingDescription, passLeft?: string) {
+  const paid = desc.booking.paymentMethod === 'pass'
+    ? `<p><strong>Paid with:</strong> your pass${passLeft ? ` (${esc(passLeft)})` : ''}</p>`
+    : desc.booking.amountPence > 0 ? `<p><strong>Paid:</strong> ${formatPence(desc.booking.amountPence)}</p>` : '';
   await sendEmail({
     to: desc.customer.email,
     subject: `You're booked: ${desc.title}`,
@@ -116,10 +118,14 @@ export async function sendBookingConfirmed(desc: BookingDescription) {
   });
 }
 
-export async function sendBookingCancelled(desc: BookingDescription, refundedPence: number) {
+export async function sendBookingCancelled(desc: BookingDescription, refundedPence: number, creditReturned = false) {
   const refund = refundedPence > 0
     ? `<p>A refund of <strong>${formatPence(refundedPence)}</strong> is on its way to your card. It usually arrives within 5 to 10 working days.</p>`
-    : '<p>As this was within the cancellation period, no refund is due.</p>';
+    : creditReturned
+      ? '<p>The class has gone back on your pass, ready to book another.</p>'
+      : desc.booking.paymentMethod === 'pass'
+        ? '<p>As this was within 4 hours of the class, the class has not gone back on your pass.</p>'
+        : desc.booking.amountPence > 0 ? '<p>As this was within the cancellation period, no refund is due.</p>' : '';
   await sendEmail({
     to: desc.customer.email,
     subject: `Booking cancelled: ${desc.title}`,
@@ -131,10 +137,12 @@ export async function sendBookingCancelled(desc: BookingDescription, refundedPen
   });
 }
 
-export async function sendClassCancelled(to: string, name: string, title: string, when: Date, refundedPence: number, kind: string) {
+export async function sendClassCancelled(to: string, name: string, title: string, when: Date, refundedPence: number, kind: string, creditReturned = false) {
   const refund = refundedPence > 0
     ? `<p>You've been refunded <strong>${formatPence(refundedPence)}</strong> in full.</p>`
-    : kind === 'course'
+    : creditReturned
+      ? '<p>The class has gone back on your pass.</p>'
+      : kind === 'course'
       ? '<p>Lara will be in touch about a make-up session.</p>'
       : '';
   await sendEmail({
@@ -176,5 +184,38 @@ export async function sendAdminLoginLink(to: string, link: string) {
       <p>Tap the button below to sign in. The link works once and expires in 20 minutes.</p>
       ${button(link, 'Sign in')}
       <p class="ew-muted" style="font-size:13px;color:#666666">If you didn't ask for this, you can ignore this email.</p>`),
+  });
+}
+
+export async function sendClientLoginLink(to: string, name: string, link: string) {
+  await sendEmail({
+    to,
+    subject: 'Your Eir & Wild sign-in link',
+    html: layout(`Hi ${name}`, `
+      <p>Tap the button below to sign in to your Eir &amp; Wild account, where you can see your bookings and passes. The link works once and expires in an hour.</p>
+      ${button(link, 'Sign in')}
+      <p class="ew-muted" style="font-size:13px;color:#666666">If you didn't ask for this, you can ignore this email.</p>`),
+  });
+}
+
+export async function sendPassConfirmed(
+  to: string,
+  name: string,
+  pass: { name: string; credits: string; classes: string; until: string | null; amountPence: number },
+) {
+  await sendEmail({
+    to,
+    subject: `Your pass is ready: ${pass.name}`,
+    html: layout(`Your pass is ready, ${name}!`, `
+      <p>Thank you for buying <strong>${esc(pass.name)}</strong>.</p>
+      <ul style="padding-left:18px">
+        <li><strong>Covers:</strong> ${esc(pass.credits)}</li>
+        <li><strong>For:</strong> ${esc(pass.classes)}</li>
+        ${pass.until ? `<li><strong>Use by:</strong> ${esc(pass.until)}</li>` : ''}
+        ${pass.amountPence > 0 ? `<li><strong>Paid:</strong> ${formatPence(pass.amountPence)}</li>` : ''}
+      </ul>
+      <p>To book a class with your pass, sign in with this email address and choose <strong>Book with my pass</strong> on any class it covers.</p>
+      ${button(`${appUrl()}/account/login`, 'Sign in and book')}
+      <p>See you soon!<br>Lara x</p>`),
   });
 }

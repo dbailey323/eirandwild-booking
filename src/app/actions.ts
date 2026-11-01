@@ -102,12 +102,14 @@ export async function cancelOwnBooking(_prev: FormState, form: FormData): Promis
   try {
     const result = await cancelBooking(db, desc.booking.id, { refund: refundPayment });
     const updated = await getBookingByToken(db, token);
-    if (updated && desc.booking.status === 'confirmed') await safely(() => sendBookingCancelled(updated, result.refundedPence));
+    if (updated && desc.booking.status === 'confirmed') await safely(() => sendBookingCancelled(updated, result.refundedPence, result.creditReturned));
     await notifyWaitlist(db, result.freedSessionIds);
     return {
       ok: result.refundedPence > 0
         ? 'Your booking is cancelled and your refund is on its way.'
-        : 'Your booking is cancelled.',
+        : result.creditReturned
+          ? 'Your booking is cancelled and the class is back on your pass.'
+          : 'Your booking is cancelled.',
     };
   } catch (error) {
     if (error instanceof BookingError) return { error: error.message };

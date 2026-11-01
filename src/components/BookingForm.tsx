@@ -20,11 +20,15 @@ export function BookingForm({
   hidden,
   submitLabel,
   withPolicy = true,
+  policy,
+  defaults = {},
 }: {
   action: (state: FormState, form: FormData) => Promise<FormState>;
   hidden: Record<string, string | number>;
   submitLabel: string;
   withPolicy?: boolean;
+  policy?: React.ReactNode;
+  defaults?: { name?: string; email?: string; phone?: string };
 }) {
   const [state, formAction] = useActionState(action, {});
   if (state.ok) return <p className="alert ok">{state.ok}</p>;
@@ -36,16 +40,16 @@ export function BookingForm({
       ))}
       <label>
         Your name
-        <input type="text" name="name" autoComplete="name" required />
+        <input type="text" name="name" autoComplete="name" defaultValue={defaults.name} required />
       </label>
       <div className="grid-2">
         <label>
           Email
-          <input type="email" name="email" autoComplete="email" required />
+          <input type="email" name="email" autoComplete="email" defaultValue={defaults.email} required />
         </label>
         <label>
           Mobile (optional)
-          <input type="tel" name="phone" autoComplete="tel" />
+          <input type="tel" name="phone" autoComplete="tel" defaultValue={defaults.phone} />
         </label>
       </div>
       <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: '-9999px' }} />
@@ -53,7 +57,7 @@ export function BookingForm({
         <label className="check">
           <input type="checkbox" name="agree" required />
           <span>
-            I agree to the <Link href="/policies" target="_blank">booking and refund policy</Link>.
+            {policy ?? <>I agree to the <Link href="/policies" target="_blank">booking and refund policy</Link>.</>}
           </span>
         </label>
       )}

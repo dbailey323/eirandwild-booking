@@ -8,7 +8,11 @@ import { formatPence } from '@/lib/money';
 import { PAYG_CANCEL_HOURS } from '@/lib/policy';
 import { formatDay, formatTimeRange } from '@/lib/time';
 import { BookingForm } from '@/components/BookingForm';
+import { PassBookForm } from '@/components/ClientForms';
 import { bookSession, joinWaitlistAction } from '@/app/actions';
+import { currentClient } from '@/lib/clientAuth';
+import { passEndText } from '@/lib/notify';
+import { passesForSession } from '@/lib/passes';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,11 +26,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ClassPage({ params }: Props) {
   const id = Number((await params).id);
   if (!Number.isInteger(id)) notFound();
-  const item = await getSession(getDb(), id);
+  const db = getDb();
+  const item = await getSession(db, id);
   if (!item) notFound();
   const { session, classType, location, course, spacesLeft } = item;
   const past = session.startsAt <= new Date();
   const cancelled = session.status !== 'scheduled';
+  const client = await currentClient(db);
+  const passes = client && !past && !cancelled && session.pricePence !== null ? await passesForSession(db, client.id, session) : [];
+  const passChoices = passes.map((p) => ({
+    id: p.pass.id,
+    label: `${p.type.name} (${p.creditsLeft === null ? 'unlimited' : `${p.creditsLeft} left`}${p.pass.expiresAt ? `, use by ${passEndText(p.pass.expiresAt)}` : ''})`,
+  }));
 
   if (session.pricePence === null && course) {
     return (
@@ -68,11 +79,30 @@ export default async function ClassPage({ params }: Props) {
       ) : past ? (
         <p className="alert info">This class has already started. <Link href="/">See upcoming classes</Link>.</p>
       ) : spacesLeft > 0 ? (
-        <section className="card soft">
-          <h2>Book your space</h2>
-          <p className="muted">You'll pay securely by card on the next page. Free cancellation up to {PAYG_CANCEL_HOURS} hours before the class.</p>
-          <BookingForm action={bookSession} hidden={{ sessionId: session.id }} submitLabel={`Continue to payment · ${formatPence(session.pricePence ?? 0)}`} />
-        </section>
+        <>
+          {passChoices.length > 0 && (
+            <section className="card soft">
+              <h2>Book with your pass</h2>
+              <p className="muted">Cancel at least {PAYG_CANCEL_HOURS} hours before and the class goes back on your pass.</p>
+              <PassBookForm sessionId={session.id} passes={passChoices} />
+            </section>
+          )}
+          <section className="card soft">
+            <h2>{passChoices.length ? 'Or pay for this class' : 'Book your space'}</h2>
+            <p className="muted">You'll pay securely by card on the next page. Free cancellation up to {PAYG_CANCEL_HOURS} hours before the class.</p>
+            <BookingForm
+              action={bookSession}
+              hidden={{ sessionId: session.id }}
+              defaults={client ? { name: client.name, email: client.email, phone: client.phone } : {}}
+              submitLabel={`Continue to payment · ${formatPence(session.pricePence ?? 0)}`}
+            />
+            {!client && (
+              <p className="muted" style={{ marginBottom: 0 }}>
+                Got a class pass? <Link href={`/account/login?next=/class/${session.id}`}>Sign in to book with it</Link>.
+              </p>
+            )}
+          </section>
+        </>
       ) : (
         <section className="card soft">
           <h2>Join the waiting list</h2>
