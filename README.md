@@ -39,7 +39,7 @@ This is **Stage 1**: pay-as-you-go classes, courses, card payments, waiting list
 
 1. **Database.** In the Vercel project, add a Postgres database (e.g. Neon from the Vercel Marketplace). This sets `DATABASE_URL`.
 2. **Environment variables.** Copy `.env.example` and fill in each value in Vercel's project settings.
-3. **Tables and classes.** Run these against the database:
+3. **Tables and classes.** These are set up automatically on every Vercel build (`npm run build` runs `db:migrate` and `db:seed`, both safe to repeat). To run them by hand:
    ```bash
    npm install
    npm run db:migrate   # creates the tables
