@@ -28,6 +28,10 @@ function customerFrom(form: FormData) {
   };
 }
 
+function voucherFrom(form: FormData) {
+  return String(form.get('voucher') ?? '').trim() || undefined;
+}
+
 // Simple spam trap: a field people can't see, which bots tend to fill in
 function looksLikeSpam(form: FormData) {
   return String(form.get('website') ?? '') !== '';
@@ -59,7 +63,7 @@ export async function bookSession(_prev: FormState, form: FormData): Promise<For
   const sessionId = Number(form.get('sessionId'));
   let booking: Booking;
   try {
-    booking = await createSessionBooking(getDb(), { sessionId, customer: customerFrom(form) });
+    booking = await createSessionBooking(getDb(), { sessionId, customer: customerFrom(form), voucherCode: voucherFrom(form) });
   } catch (error) {
     if (error instanceof BookingError) return { error: error.message };
     throw error;
@@ -73,7 +77,7 @@ export async function bookCourse(_prev: FormState, form: FormData): Promise<Form
   const courseId = Number(form.get('courseId'));
   let booking: Booking;
   try {
-    booking = await createCourseBooking(getDb(), { courseId, customer: customerFrom(form) });
+    booking = await createCourseBooking(getDb(), { courseId, customer: customerFrom(form), voucherCode: voucherFrom(form) });
   } catch (error) {
     if (error instanceof BookingError) return { error: error.message };
     throw error;
@@ -102,12 +106,14 @@ export async function cancelOwnBooking(_prev: FormState, form: FormData): Promis
   try {
     const result = await cancelBooking(db, desc.booking.id, { refund: refundPayment });
     const updated = await getBookingByToken(db, token);
-    if (updated && desc.booking.status === 'confirmed') await safely(() => sendBookingCancelled(updated, result.refundedPence, result.creditReturned));
+    if (updated && desc.booking.status === 'confirmed') await safely(() => sendBookingCancelled(updated, result.refundedPence, result.creditReturned, result.voucherReturnedPence));
     await notifyWaitlist(db, result.freedSessionIds);
     return {
       ok: result.refundedPence > 0
         ? 'Your booking is cancelled and your refund is on its way.'
-        : result.creditReturned
+        : result.voucherReturnedPence > 0
+          ? 'Your booking is cancelled and the money is back on your gift voucher.'
+          : result.creditReturned
           ? 'Your booking is cancelled and the class is back on your pass.'
           : 'Your booking is cancelled.',
     };

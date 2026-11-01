@@ -60,7 +60,7 @@ export default async function CoursePage({ params }: Props) {
           <p className="muted">
             One booking covers every session. You'll pay securely by card on the next page. Free cancellation up to {COURSE_CANCEL_HOURS} hours before the course starts.
           </p>
-          <BookingForm action={bookCourse} hidden={{ courseId: course.id }} submitLabel={`Continue to payment · ${formatPence(pricePence)}`} />
+          <BookingForm action={bookCourse} withVoucher hidden={{ courseId: course.id }} submitLabel={`Continue to payment · ${formatPence(pricePence)}`} />
         </section>
       ) : spacesLeft === 0 && remaining.length > 0 ? (
         <section className="card soft">

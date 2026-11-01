@@ -13,7 +13,7 @@ import { adjustPassAction, cancelPassAction, grantPassAction, updateClientAction
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; error?: string }> };
 
-const METHOD: Record<string, string> = { stripe: 'Card', cash: 'Cash', free: 'Free', manual: 'Manual', pass: 'Pass' };
+const METHOD: Record<string, string> = { stripe: 'Card', cash: 'Cash', free: 'Free', manual: 'Manual', pass: 'Pass', voucher: 'Gift voucher' };
 
 export default async function AdminClientPage({ params, searchParams }: Props) {
   const id = Number((await params).id);
@@ -107,8 +107,11 @@ export default async function AdminClientPage({ params, searchParams }: Props) {
                 >
                   <input type="hidden" name="customerId" value={id} />
                   <input type="hidden" name="passId" value={pass.id} />
-                  {pass.paymentMethod === 'stripe' && pass.amountPence > pass.refundedPence && (
-                    <label>Refund to card £ (optional, up to {formatPence(pass.amountPence - pass.refundedPence)})<input type="text" name="refund" inputMode="decimal" /></label>
+                  {pass.paymentMethod === 'stripe' && pass.amountPence - pass.voucherPence > pass.refundedPence && (
+                    <label>Refund to card £ (optional, up to {formatPence(pass.amountPence - pass.voucherPence - pass.refundedPence)})<input type="text" name="refund" inputMode="decimal" /></label>
+                  )}
+                  {pass.voucherPence > 0 && (
+                    <label className="check"><input type="checkbox" name="returnVoucher" /> Put the {formatPence(pass.voucherPence)} paid by gift voucher back on the voucher</label>
                   )}
                   <p className="muted">Classes already booked with this pass stay booked.</p>
                   <button className="btn small danger" type="submit">Cancel pass</button>
@@ -142,6 +145,13 @@ export default async function AdminClientPage({ params, searchParams }: Props) {
               <label>Amount paid £ (optional)<input type="text" name="amount" inputMode="decimal" /></label>
             </div>
             <label>Note (optional)<input type="text" name="notes" placeholder="e.g. Facebook competition winner" /></label>
+            <details style={{ marginBottom: 14 }}>
+              <summary className="muted" style={{ cursor: 'pointer' }}>Moving a pass over from Bookwhen?</summary>
+              <div className="grid-2" style={{ marginTop: 10 }}>
+                <label>Classes left<input type="number" name="creditsLeft" min={0} /></label>
+                <label>Last day it can be used<input type="date" name="expiresOn" /></label>
+              </div>
+            </details>
             <label className="check"><input type="checkbox" name="notify" defaultChecked /> Email them the pass details</label>
             <button className="btn navy" type="submit">Give pass</button>
           </form>

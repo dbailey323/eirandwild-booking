@@ -34,3 +34,10 @@ export function proRataPrice(coursePricePence: number, totalSessions: number, re
 
 // Passes are not refundable once bought, but Lara can choose to refund one herself
 export const PASS_POLICY = 'Passes can be used for the classes listed, until the end date shown. Passes are non-refundable and cannot be transferred.';
+
+// Gift vouchers: how long they last and the amounts people can buy online
+export const VOUCHER_MONTHS = 12;
+export const VOUCHER_MIN_PENCE = 500;
+export const VOUCHER_MAX_PENCE = 50000;
+export const VOUCHER_AMOUNTS_PENCE = [1000, 2500, 5000];
+export const VOUCHER_POLICY = `Gift vouchers can be spent on any Eir & Wild class, course or pass booked online within ${VOUCHER_MONTHS} months of purchase. They can be used over several bookings, and cannot be exchanged for cash.`;

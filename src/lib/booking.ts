@@ -7,17 +7,15 @@ import { and, asc, eq, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import * as schema from '@/db/schema';
 import { bookings, classTypes, courses, customerPasses, customers, locations, registrations, sessions, waitlist } from '@/db/schema';
+import { BookingError } from './errors';
+import { applyVoucher, reverseVoucher } from './vouchers';
 import { HOLD_MINUTES, canRefund, cancellationDeadline, proRataPrice } from './policy';
 import { addLondonDays, addMinutes, londonDateKey, londonToUtc } from './time';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema, any>;
 
-export class BookingError extends Error {
-  constructor(public code: string, message: string) {
-    super(message);
-  }
-}
+export { BookingError };
 
 export type CustomerInput = { email: string; name: string; phone?: string };
 
@@ -177,22 +175,30 @@ export async function upsertCustomer(db: Db, input: CustomerInput) {
 
 // ---------------------------------------------------------------- booking
 
-function newBookingValues(customerId: number, now: Date, amountPence: number) {
+// voucherPence: the part of amountPence a gift voucher has already paid
+function newBookingValues(customerId: number, now: Date, amountPence: number, voucherPence = 0, id: string = randomUUID()) {
+  const paid = amountPence - voucherPence === 0;
   return {
-    id: randomUUID(),
+    id,
     customerId,
     amountPence,
+    voucherPence,
     manageToken: randomBytes(24).toString('base64url'),
-    status: amountPence === 0 ? 'confirmed' : 'pending',
-    paymentMethod: amountPence === 0 ? 'free' : 'stripe',
-    holdExpiresAt: amountPence === 0 ? null : addMinutes(now, HOLD_MINUTES),
-    confirmedAt: amountPence === 0 ? now : null,
+    status: paid ? 'confirmed' : 'pending',
+    paymentMethod: amountPence === 0 ? 'free' : paid ? 'voucher' : 'stripe',
+    holdExpiresAt: paid ? null : addMinutes(now, HOLD_MINUTES),
+    confirmedAt: paid ? now : null,
   } as const;
+}
+
+// The part of a booking still to pay by card
+export function cardPence(booking: { amountPence: number; voucherPence: number }): number {
+  return booking.amountPence - booking.voucherPence;
 }
 
 export async function createSessionBooking(
   db: Db,
-  input: { sessionId: number; customer: CustomerInput; now?: Date },
+  input: { sessionId: number; customer: CustomerInput; voucherCode?: string; now?: Date },
 ): Promise<Booking> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
@@ -206,9 +212,11 @@ export async function createSessionBooking(
 
     const customer = await upsertCustomer(tx, input.customer);
     await assertNotAlreadyBooked(tx, customer.id, [session.id], now);
+    const id = randomUUID();
+    const voucherPence = input.voucherCode?.trim() ? await applyVoucher(tx, input.voucherCode, session.pricePence, { bookingId: id }, now) : 0;
     const [booking] = await tx
       .insert(bookings)
-      .values({ ...newBookingValues(customer.id, now, session.pricePence), kind: 'session', sessionId: session.id })
+      .values({ ...newBookingValues(customer.id, now, session.pricePence, voucherPence, id), kind: 'session', sessionId: session.id })
       .returning();
     await tx.insert(registrations).values({ bookingId: booking.id, sessionId: session.id });
     return booking;
@@ -217,7 +225,7 @@ export async function createSessionBooking(
 
 export async function createCourseBooking(
   db: Db,
-  input: { courseId: number; customer: CustomerInput; now?: Date },
+  input: { courseId: number; customer: CustomerInput; voucherCode?: string; now?: Date },
 ): Promise<Booking> {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
@@ -229,9 +237,11 @@ export async function createCourseBooking(
     const customer = await upsertCustomer(tx, input.customer);
     const sessionIds = detail.remaining.map((s) => s.id);
     await assertNotAlreadyBooked(tx, customer.id, sessionIds, now);
+    const id = randomUUID();
+    const voucherPence = input.voucherCode?.trim() ? await applyVoucher(tx, input.voucherCode, detail.pricePence, { bookingId: id }, now) : 0;
     const [booking] = await tx
       .insert(bookings)
-      .values({ ...newBookingValues(customer.id, now, detail.pricePence), kind: 'course', courseId: course.id })
+      .values({ ...newBookingValues(customer.id, now, detail.pricePence, voucherPence, id), kind: 'course', courseId: course.id })
       .returning();
     await tx.insert(registrations).values(sessionIds.map((sessionId) => ({ bookingId: booking.id, sessionId })));
     return booking;
@@ -273,6 +283,8 @@ export async function expireBooking(db: Db, bookingId: string): Promise<number[]
   const [booking] = await db.select().from(bookings).where(eq(bookings.id, bookingId));
   if (!booking || booking.status !== 'pending') return [];
   await db.update(bookings).set({ status: 'expired', holdExpiresAt: null }).where(eq(bookings.id, bookingId));
+  // Any gift voucher money goes back on the voucher
+  if (booking.voucherPence > 0) await reverseVoucher(db, { bookingId });
   const regs = await db
     .update(registrations)
     .set({ status: 'cancelled' })
@@ -322,7 +334,8 @@ export async function describeBooking(db: Db, booking: Booking) {
 export type RefundFn = (paymentIntentId: string, amountPence: number) => Promise<void>;
 
 // creditReturned: a class booked with a pass went back on the pass
-export type CancelResult = { refundedPence: number; freedSessionIds: number[]; creditReturned: boolean };
+// voucherReturnedPence: gift voucher money put back on the voucher
+export type CancelResult = { refundedPence: number; freedSessionIds: number[]; creditReturned: boolean; voucherReturnedPence: number };
 
 // Cancels a whole booking. Customers get a refund only within Lara's notice periods;
 // Lara (byAdmin) can choose to refund regardless.
@@ -339,14 +352,17 @@ export async function cancelBooking(
   if (!opts.byAdmin && firstStart && firstStart <= now) throw new BookingError('started', 'This has already started, so it can no longer be cancelled online.');
 
   const eligible = firstStart ? canRefund(booking.kind as 'session' | 'course', firstStart, now) : true;
-  const shouldRefund = booking.status === 'confirmed' && booking.paymentMethod === 'stripe' && (opts.forceRefund || eligible);
-  const refundPence = shouldRefund ? booking.amountPence - booking.refundedPence : 0;
+  const refundDue = booking.status === 'confirmed' && (!!opts.forceRefund || eligible);
+  // Card payments go back to the card; anything paid by gift voucher goes back on the voucher
+  const refundPence = refundDue && booking.paymentMethod === 'stripe' ? Math.max(cardPence(booking) - booking.refundedPence, 0) : 0;
   if (refundPence > 0) {
     if (!booking.stripePaymentIntentId) throw new BookingError('no_payment', 'No card payment found to refund.');
     await opts.refund(booking.stripePaymentIntentId, refundPence);
   }
+  // (an unpaid booking always gets its voucher money back)
+  const voucherReturnedPence = (refundDue || booking.status === 'pending') && booking.voucherPence > 0 ? await reverseVoucher(db, { bookingId }, now) : 0;
   // Classes booked with a pass go back on the pass on the same terms as a refund
-  const creditReturned = booking.status === 'confirmed' && booking.paymentMethod === 'pass' && !!booking.passId && (!!opts.forceRefund || eligible);
+  const creditReturned = refundDue && booking.paymentMethod === 'pass' && !!booking.passId;
   if (creditReturned) {
     await db
       .update(customerPasses)
@@ -362,7 +378,7 @@ export async function cancelBooking(
     .set({ status: 'cancelled' })
     .where(and(eq(registrations.bookingId, bookingId), eq(registrations.status, 'active')))
     .returning({ sessionId: registrations.sessionId });
-  return { refundedPence: refundPence, freedSessionIds: regs.map((r) => r.sessionId), creditReturned };
+  return { refundedPence: refundPence, freedSessionIds: regs.map((r) => r.sessionId), creditReturned, voucherReturnedPence };
 }
 
 // ---------------------------------------------------------------- waiting list
@@ -548,14 +564,14 @@ export async function cancelSession(db: Db, sessionId: number, opts: { refund: R
   if (!session) throw new BookingError('not_found', 'Class not found');
   const attendees = await register(db, sessionId);
   await db.update(sessions).set({ status: 'cancelled' }).where(eq(sessions.id, sessionId));
-  const results: { email: string; name: string; refundedPence: number; kind: string; creditReturned: boolean }[] = [];
+  const results: { email: string; name: string; refundedPence: number; kind: string; creditReturned: boolean; voucherReturnedPence: number }[] = [];
   for (const a of attendees) {
     if (a.booking.kind === 'session') {
       const r = await cancelBooking(db, a.booking.id, { refund: opts.refund, byAdmin: true, forceRefund: true, now });
-      results.push({ email: a.customer.email, name: a.customer.name, refundedPence: r.refundedPence, kind: 'session', creditReturned: r.creditReturned });
+      results.push({ email: a.customer.email, name: a.customer.name, refundedPence: r.refundedPence, kind: 'session', creditReturned: r.creditReturned, voucherReturnedPence: r.voucherReturnedPence });
     } else {
       await db.update(registrations).set({ status: 'cancelled' }).where(eq(registrations.id, a.registration.id));
-      results.push({ email: a.customer.email, name: a.customer.name, refundedPence: 0, kind: 'course', creditReturned: false });
+      results.push({ email: a.customer.email, name: a.customer.name, refundedPence: 0, kind: 'course', creditReturned: false, voucherReturnedPence: 0 });
     }
   }
   return { session, affected: results };

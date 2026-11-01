@@ -15,6 +15,13 @@
       "when": 1793554157585,
       "tag": "0001_passes",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793555805824,
+      "tag": "0002_gift_vouchers",
+      "breakpoints": true
     }
   ]
 }

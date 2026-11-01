@@ -13,6 +13,7 @@ export default async function AdminClientsPage({ searchParams }: Props) {
     <>
       <Flash ok={ok} error={error} />
       <h1>Clients</h1>
+      <p><Link href="/admin/import">Import clients from Bookwhen →</Link></p>
       <form method="get" className="row-actions" style={{ marginBottom: 16 }}>
         <input type="search" name="q" defaultValue={q} placeholder="Search by name, email or phone" aria-label="Search clients" style={{ flex: 1 }} />
         <button className="btn small navy" type="submit">Search</button>

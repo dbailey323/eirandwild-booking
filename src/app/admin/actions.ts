@@ -21,7 +21,9 @@ import {
 import { adjustPass, bookWithPass, cancelPass, createPassType, grantPass, setPassTypeOnSale } from '@/lib/passes';
 import { sendAdminLoginLink, sendBookingCancelled, sendBookingConfirmed, sendClassCancelled } from '@/lib/email';
 import { poundsToPence } from '@/lib/money';
-import { notifyPassReady, notifyWaitlist, passLeftText, safely } from '@/lib/notify';
+import { notifyPassReady, notifyVoucherReady, notifyWaitlist, passLeftText, safely } from '@/lib/notify';
+import { adjustVoucher, cancelVoucher, grantVoucher } from '@/lib/vouchers';
+import { importClients, readClients } from '@/lib/importClients';
 import { appUrl, refundPayment } from '@/lib/stripe';
 
 export type AdminState = { error?: string; ok?: string };
@@ -152,7 +154,7 @@ export async function cancelSessionAction(form: FormData) {
     const { session, affected } = await cancelSession(getDb(), id, { refund: refundPayment });
     const [type] = await getDb().select().from(classTypes).where(eq(classTypes.id, session.classTypeId));
     for (const a of affected) {
-      await safely(() => sendClassCancelled(a.email, a.name, type?.name ?? 'Your class', session.startsAt, a.refundedPence, a.kind, a.creditReturned));
+      await safely(() => sendClassCancelled(a.email, a.name, type?.name ?? 'Your class', session.startsAt, a.refundedPence, a.kind, a.creditReturned, a.voucherReturnedPence));
     }
   } catch (error) {
     back(`/admin/class/${id}`, { error: errorText(error) });
@@ -170,9 +172,10 @@ export async function cancelBookingAction(form: FormData) {
   try {
     const result = await cancelBooking(db, bookingId, { refund: refundPayment, byAdmin: true, forceRefund: form.get('refund') === 'on' });
     const desc = await getBooking(db, bookingId);
-    if (desc && form.get('notify') === 'on') await safely(() => sendBookingCancelled(desc, result.refundedPence, result.creditReturned));
+    if (desc && form.get('notify') === 'on') await safely(() => sendBookingCancelled(desc, result.refundedPence, result.creditReturned, result.voucherReturnedPence));
     await notifyWaitlist(db, result.freedSessionIds);
     if (result.refundedPence > 0) message = `Booking cancelled and £${(result.refundedPence / 100).toFixed(2)} refunded`;
+    else if (result.voucherReturnedPence > 0) message = `Booking cancelled and £${(result.voucherReturnedPence / 100).toFixed(2)} put back on their gift voucher`;
     else if (result.creditReturned) message = 'Booking cancelled and the class put back on their pass';
   } catch (error) {
     back(`/admin/class/${sessionId}`, { error: errorText(error) });
@@ -277,6 +280,13 @@ export async function grantPassAction(form: FormData) {
       amountPence: str(form, 'amount') ? poundsToPence(str(form, 'amount')) : 0,
       notes: str(form, 'notes'),
     });
+    // Moving a pass over from Bookwhen: set the classes left and its end date
+    if (str(form, 'creditsLeft') || str(form, 'expiresOn')) {
+      await adjustPass(db, pass.id, {
+        creditsTotal: str(form, 'creditsLeft') && pass.creditsTotal !== null ? num(form, 'creditsLeft') : undefined,
+        expiresOn: str(form, 'expiresOn') || null,
+      });
+    }
     if (form.get('notify') === 'on') await notifyPassReady(db, pass.id);
   } catch (error) {
     back(path, { error: errorText(error) });
@@ -307,8 +317,9 @@ export async function cancelPassAction(form: FormData) {
   let message = 'Pass cancelled';
   try {
     const refundPence = str(form, 'refund') ? poundsToPence(str(form, 'refund')) : 0;
-    const result = await cancelPass(getDb(), str(form, 'passId'), { refundPence, refund: refundPayment });
+    const result = await cancelPass(getDb(), str(form, 'passId'), { refundPence, returnVoucher: form.get('returnVoucher') === 'on', refund: refundPayment });
     if (result.refundedPence > 0) message = `Pass cancelled and £${(result.refundedPence / 100).toFixed(2)} refunded`;
+    if (result.voucherReturnedPence > 0) message += `, £${(result.voucherReturnedPence / 100).toFixed(2)} back on their gift voucher`;
   } catch (error) {
     back(path, { error: errorText(error) });
   }
@@ -335,4 +346,87 @@ export async function addClientAction(form: FormData) {
     back('/admin/clients', { error: errorText(error) });
   }
   back(`/admin/clients/${id}`, { ok: 'Client saved' });
+}
+
+// ---------------------------------------------------------------- gift vouchers
+
+export async function grantVoucherAction(form: FormData) {
+  await requireAdmin();
+  const db = getDb();
+  let id = '';
+  try {
+    const voucher = await grantVoucher(db, {
+      amountPence: poundsToPence(str(form, 'amount')),
+      buyerName: str(form, 'buyerName') || 'Eir & Wild',
+      buyerEmail: str(form, 'buyerEmail'),
+      recipientName: str(form, 'recipientName'),
+      recipientEmail: str(form, 'recipientEmail'),
+      message: str(form, 'message'),
+      method: (str(form, 'method') || 'free') as 'free' | 'cash' | 'manual',
+      notes: str(form, 'notes'),
+    });
+    id = voucher.id;
+    if (form.get('notify') === 'on') await notifyVoucherReady(db, voucher.id);
+  } catch (error) {
+    back('/admin/vouchers', { error: errorText(error) });
+  }
+  revalidatePath('/admin/vouchers');
+  back(`/admin/vouchers/${id}`, { ok: 'Voucher created' });
+}
+
+export async function adjustVoucherAction(form: FormData) {
+  await requireAdmin();
+  const id = str(form, 'voucherId');
+  try {
+    await adjustVoucher(getDb(), id, {
+      balancePence: str(form, 'balance') ? poundsToPence(str(form, 'balance')) : undefined,
+      expiresOn: str(form, 'expiresOn') || undefined,
+      notes: str(form, 'notes'),
+    });
+  } catch (error) {
+    back(`/admin/vouchers/${id}`, { error: errorText(error) });
+  }
+  revalidatePath(`/admin/vouchers/${id}`);
+  back(`/admin/vouchers/${id}`, { ok: 'Voucher updated' });
+}
+
+export async function resendVoucherAction(form: FormData) {
+  await requireAdmin();
+  const id = str(form, 'voucherId');
+  await notifyVoucherReady(getDb(), id);
+  back(`/admin/vouchers/${id}`, { ok: 'Voucher emailed again' });
+}
+
+export async function cancelVoucherAction(form: FormData) {
+  await requireAdmin();
+  const id = str(form, 'voucherId');
+  let message = 'Voucher cancelled';
+  try {
+    const refundPence = str(form, 'refund') ? poundsToPence(str(form, 'refund')) : 0;
+    const result = await cancelVoucher(getDb(), id, { refundPence, refund: refundPayment });
+    if (result.refundedPence > 0) message = `Voucher cancelled and £${(result.refundedPence / 100).toFixed(2)} refunded`;
+  } catch (error) {
+    back(`/admin/vouchers/${id}`, { error: errorText(error) });
+  }
+  revalidatePath(`/admin/vouchers/${id}`);
+  back(`/admin/vouchers/${id}`, { ok: message });
+}
+
+// ---------------------------------------------------------------- importing clients
+
+export type ImportState = { error?: string; ok?: string; preview?: { clients: { name: string; email: string; phone: string }[]; total: number; skipped: { line: number; reason: string }[]; columns: string[] } };
+
+export async function importClientsAction(_prev: ImportState, form: FormData): Promise<ImportState> {
+  await requireAdmin();
+  const text = String(form.get('csv') ?? '');
+  if (!text.trim()) return { error: 'Choose the file exported from Bookwhen first.' };
+  const result = readClients(text);
+  if (!result.columns.length) return { error: "Couldn't find an email column in that file. Is it the client export from Bookwhen?" };
+  if (!result.clients.length) return { error: 'No clients with email addresses were found in that file.' };
+  if (form.get('mode') !== 'import') {
+    return { preview: { clients: result.clients.slice(0, 10), total: result.clients.length, skipped: result.skipped.slice(0, 20), columns: result.columns } };
+  }
+  const { added, existing } = await importClients(getDb(), result.clients);
+  revalidatePath('/admin/clients');
+  return { ok: `Imported ${added} new ${added === 1 ? 'client' : 'clients'}${existing ? ` (${existing} already here, left as they were)` : ''}.` };
 }

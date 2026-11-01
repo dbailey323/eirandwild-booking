@@ -26,6 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <nav className="header-links" aria-label="Main">
               <Link className="header-link" href="/passes">Passes</Link>
+              <Link className="header-link" href="/gift">Gift vouchers</Link>
               <Link className="header-link" href="/account">My account</Link>
               <a className="header-link" href="https://www.eirandwild.co.uk">Main website</a>
             </nav>

@@ -7,6 +7,7 @@ import { and, asc, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { bookings, classTypes, customerPasses, customers, passTypeClasses, passTypes, registrations, sessions } from '@/db/schema';
 import { BookingError, assertNotAlreadyBooked, takenCounts, upsertCustomer, type Booking, type CustomerInput, type Db, type RefundFn } from './booking';
 import { addLondonDays, londonDateKey, londonToUtc } from './time';
+import { applyVoucher, reverseVoucher } from './vouchers';
 
 export type PassType = typeof passTypes.$inferSelect;
 export type CustomerPass = typeof customerPasses.$inferSelect;
@@ -111,23 +112,31 @@ function newPassValues(customerId: number, type: PassType) {
 
 // A client buying a pass on the site. Free passes are active straight away; paid ones
 // wait for the Stripe webhook.
-export async function createPassPurchase(db: Db, input: { passTypeId: number; customer: CustomerInput; now?: Date }): Promise<CustomerPass> {
+export async function createPassPurchase(
+  db: Db,
+  input: { passTypeId: number; customer: CustomerInput; voucherCode?: string; now?: Date },
+): Promise<CustomerPass> {
   const now = input.now ?? new Date();
   const type = (await listPassTypes(db, { onSaleOnly: true, now })).find((t) => t.id === input.passTypeId);
   if (!type) throw new BookingError('unavailable', 'This pass is no longer available.');
-  const customer = await upsertCustomer(db, input.customer);
-  const free = type.pricePence === 0;
-  const [pass] = await db
-    .insert(customerPasses)
-    .values({
-      ...newPassValues(customer.id, type),
-      amountPence: type.pricePence,
-      status: free ? 'active' : 'pending',
-      paymentMethod: free ? 'free' : 'stripe',
-      ...(free ? { ...passWindow(type, now), activatedAt: now } : {}),
-    })
-    .returning();
-  return pass;
+  return db.transaction(async (tx) => {
+    const customer = await upsertCustomer(tx, input.customer);
+    const values = newPassValues(customer.id, type);
+    const voucherPence = input.voucherCode?.trim() ? await applyVoucher(tx, input.voucherCode, type.pricePence, { passId: values.id }, now) : 0;
+    const paid = type.pricePence - voucherPence === 0;
+    const [pass] = await tx
+      .insert(customerPasses)
+      .values({
+        ...values,
+        amountPence: type.pricePence,
+        voucherPence,
+        status: paid ? 'active' : 'pending',
+        paymentMethod: type.pricePence === 0 ? 'free' : paid ? 'voucher' : 'stripe',
+        ...(paid ? { ...passWindow(type, now), activatedAt: now } : {}),
+      })
+      .returning();
+    return pass;
+  });
 }
 
 // Lara gives someone a pass: a prize, a pass paid in cash, or a PT membership
@@ -173,7 +182,12 @@ export async function activatePass(db: Db, passId: string, opts: { paymentIntent
 }
 
 export async function expirePassPurchase(db: Db, passId: string) {
-  await db.update(customerPasses).set({ status: 'expired' }).where(and(eq(customerPasses.id, passId), eq(customerPasses.status, 'pending')));
+  const expired = await db
+    .update(customerPasses)
+    .set({ status: 'expired' })
+    .where(and(eq(customerPasses.id, passId), eq(customerPasses.status, 'pending')))
+    .returning();
+  if (expired.length && expired[0].voucherPence > 0) await reverseVoucher(db, { passId });
 }
 
 // ---------------------------------------------------------------- reading passes
@@ -292,14 +306,14 @@ export async function adjustPass(db: Db, passId: string, input: { creditsTotal?:
   if (Object.keys(set).length) await db.update(customerPasses).set(set).where(eq(customerPasses.id, passId));
 }
 
-// Cancels a pass so it can't be used again, optionally refunding some or all of a card payment.
-// Classes already booked with it stay booked.
-export async function cancelPass(db: Db, passId: string, opts: { refundPence?: number; refund: RefundFn; now?: Date }) {
+// Cancels a pass so it can't be used again, optionally refunding some or all of a card payment
+// and putting any gift voucher money back on the voucher. Classes already booked with it stay booked.
+export async function cancelPass(db: Db, passId: string, opts: { refundPence?: number; returnVoucher?: boolean; refund: RefundFn; now?: Date }) {
   const now = opts.now ?? new Date();
   const [pass] = await db.select().from(customerPasses).where(eq(customerPasses.id, passId));
   if (!pass) throw new BookingError('not_found', 'Pass not found');
   if (pass.status !== 'active') throw new BookingError('already_cancelled', 'This pass is not active.');
-  const refundPence = Math.min(Math.max(opts.refundPence ?? 0, 0), pass.amountPence - pass.refundedPence);
+  const refundPence = Math.min(Math.max(opts.refundPence ?? 0, 0), pass.amountPence - pass.voucherPence - pass.refundedPence);
   if (refundPence > 0) {
     if (pass.paymentMethod !== 'stripe' || !pass.stripePaymentIntentId) throw new BookingError('no_payment', 'No card payment found to refund.');
     await opts.refund(pass.stripePaymentIntentId, refundPence);
@@ -308,7 +322,8 @@ export async function cancelPass(db: Db, passId: string, opts: { refundPence?: n
     .update(customerPasses)
     .set({ status: 'cancelled', cancelledAt: now, refundedPence: pass.refundedPence + refundPence })
     .where(eq(customerPasses.id, passId));
-  return { refundedPence: refundPence };
+  const voucherReturnedPence = opts.returnVoucher && pass.voucherPence > 0 ? await reverseVoucher(db, { passId }, now) : 0;
+  return { refundedPence: refundPence, voucherReturnedPence };
 }
 
 // ---------------------------------------------------------------- clients

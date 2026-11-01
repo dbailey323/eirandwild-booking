@@ -51,6 +51,7 @@ export default async function PassPage({ params }: Props) {
         {client && <p className="muted">Signed in as {client.email}.</p>}
         <BookingForm
           action={buyPass}
+          withVoucher
           hidden={{ passTypeId: type.id }}
           defaults={client ? { name: client.name, email: client.email, phone: client.phone } : {}}
           submitLabel={type.pricePence > 0 ? `Continue to payment · ${formatPence(type.pricePence)}` : 'Get this pass'}

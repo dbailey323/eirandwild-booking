@@ -60,7 +60,7 @@ export async function buyPass(_prev: FormState, form: FormData): Promise<FormSta
     : { name: String(form.get('name') ?? ''), email: String(form.get('email') ?? ''), phone: String(form.get('phone') ?? '') };
   let pass: CustomerPass;
   try {
-    pass = await createPassPurchase(db, { passTypeId, customer });
+    pass = await createPassPurchase(db, { passTypeId, customer, voucherCode: String(form.get('voucher') ?? '').trim() || undefined });
   } catch (error) {
     if (error instanceof BookingError) return { error: error.message };
     throw error;

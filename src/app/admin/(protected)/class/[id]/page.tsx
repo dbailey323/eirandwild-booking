@@ -18,7 +18,7 @@ import {
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; error?: string }> };
 
-const METHOD: Record<string, string> = { stripe: 'Card', cash: 'Cash', free: 'Free', manual: 'Manual', pass: 'Pass' };
+const METHOD: Record<string, string> = { stripe: 'Card', cash: 'Cash', free: 'Free', manual: 'Manual', pass: 'Pass', voucher: 'Gift voucher' };
 
 export default async function AdminClassPage({ params, searchParams }: Props) {
   const id = Number((await params).id);
@@ -114,11 +114,14 @@ export default async function AdminClassPage({ params, searchParams }: Props) {
                       <form action={cancelBookingAction} style={{ marginTop: 10 }}>
                         <input type="hidden" name="sessionId" value={id} />
                         <input type="hidden" name="bookingId" value={booking.id} />
+                        {booking.paymentMethod === 'voucher' && (
+                          <label className="check"><input type="checkbox" name="refund" defaultChecked /> Put {formatPence(booking.voucherPence)} back on their gift voucher</label>
+                        )}
                         {booking.paymentMethod === 'pass' && (
                           <label className="check"><input type="checkbox" name="refund" defaultChecked /> Put the class back on their pass</label>
                         )}
                         {booking.paymentMethod === 'stripe' && (
-                          <label className="check"><input type="checkbox" name="refund" defaultChecked /> Refund {formatPence(booking.amountPence - booking.refundedPence)} to card</label>
+                          <label className="check"><input type="checkbox" name="refund" defaultChecked /> Refund {formatPence(booking.amountPence - booking.voucherPence - booking.refundedPence)} to card{booking.voucherPence > 0 ? ` and ${formatPence(booking.voucherPence)} to their gift voucher` : ''}</label>
                         )}
                         <label className="check"><input type="checkbox" name="notify" defaultChecked /> Email them</label>
                         {booking.kind === 'course' && <p className="muted">This cancels their whole course booking.</p>}

@@ -101,9 +101,12 @@ export function manageLink(desc: BookingDescription): string {
 }
 
 export async function sendBookingConfirmed(desc: BookingDescription, passLeft?: string) {
+  const { amountPence, voucherPence } = desc.booking;
   const paid = desc.booking.paymentMethod === 'pass'
     ? `<p><strong>Paid with:</strong> your pass${passLeft ? ` (${esc(passLeft)})` : ''}</p>`
-    : desc.booking.amountPence > 0 ? `<p><strong>Paid:</strong> ${formatPence(desc.booking.amountPence)}</p>` : '';
+    : voucherPence > 0
+      ? `<p><strong>Paid:</strong> ${formatPence(amountPence)} (${formatPence(voucherPence)} by gift voucher${amountPence > voucherPence ? `, ${formatPence(amountPence - voucherPence)} by card` : ''})</p>`
+      : amountPence > 0 ? `<p><strong>Paid:</strong> ${formatPence(amountPence)}</p>` : '';
   await sendEmail({
     to: desc.customer.email,
     subject: `You're booked: ${desc.title}`,
@@ -118,10 +121,13 @@ export async function sendBookingConfirmed(desc: BookingDescription, passLeft?: 
   });
 }
 
-export async function sendBookingCancelled(desc: BookingDescription, refundedPence: number, creditReturned = false) {
+export async function sendBookingCancelled(desc: BookingDescription, refundedPence: number, creditReturned = false, voucherReturnedPence = 0) {
+  const voucherLine = voucherReturnedPence > 0 ? `<p><strong>${formatPence(voucherReturnedPence)}</strong> has gone back on your gift voucher.</p>` : '';
   const refund = refundedPence > 0
-    ? `<p>A refund of <strong>${formatPence(refundedPence)}</strong> is on its way to your card. It usually arrives within 5 to 10 working days.</p>`
-    : creditReturned
+    ? `<p>A refund of <strong>${formatPence(refundedPence)}</strong> is on its way to your card. It usually arrives within 5 to 10 working days.</p>${voucherLine}`
+    : voucherReturnedPence > 0
+      ? voucherLine
+      : creditReturned
       ? '<p>The class has gone back on your pass, ready to book another.</p>'
       : desc.booking.paymentMethod === 'pass'
         ? '<p>As this was within 4 hours of the class, the class has not gone back on your pass.</p>'
@@ -137,10 +143,13 @@ export async function sendBookingCancelled(desc: BookingDescription, refundedPen
   });
 }
 
-export async function sendClassCancelled(to: string, name: string, title: string, when: Date, refundedPence: number, kind: string, creditReturned = false) {
+export async function sendClassCancelled(to: string, name: string, title: string, when: Date, refundedPence: number, kind: string, creditReturned = false, voucherReturnedPence = 0) {
+  const voucherLine = voucherReturnedPence > 0 ? `<p><strong>${formatPence(voucherReturnedPence)}</strong> has gone back on your gift voucher.</p>` : '';
   const refund = refundedPence > 0
-    ? `<p>You've been refunded <strong>${formatPence(refundedPence)}</strong> in full.</p>`
-    : creditReturned
+    ? `<p>You've been refunded <strong>${formatPence(refundedPence)}</strong> to your card.</p>${voucherLine}`
+    : voucherReturnedPence > 0
+      ? voucherLine
+      : creditReturned
       ? '<p>The class has gone back on your pass.</p>'
       : kind === 'course'
       ? '<p>Lara will be in touch about a make-up session.</p>'
@@ -217,5 +226,35 @@ export async function sendPassConfirmed(
       <p>To book a class with your pass, sign in with this email address and choose <strong>Book with my pass</strong> on any class it covers.</p>
       ${button(`${appUrl()}/account/login`, 'Sign in and book')}
       <p>See you soon!<br>Lara x</p>`),
+  });
+}
+
+// The gift voucher itself, sent to the buyer (and to the recipient when they gave an email)
+export async function sendGiftVoucher(
+  to: string,
+  v: { forBuyer: boolean; buyerName: string; recipientName: string; code: string; amountPence: number; message: string; until: string | null },
+) {
+  const who = v.recipientName || 'you';
+  const intro = v.forBuyer
+    ? `<p>Thank you for buying an Eir &amp; Wild gift voucher${v.recipientName ? ` for <strong>${esc(v.recipientName)}</strong>` : ''}. Here it is, ready to pass on (forward this email, or print it).</p>`
+    : `<p><strong>${esc(v.buyerName)}</strong> has sent you an Eir &amp; Wild gift voucher!</p>`;
+  const voucherCard = `
+    <div style="margin:22px 0;border:2px dashed #7ae1d5;border-radius:16px;padding:22px 18px;text-align:center">
+      <p class="ew-muted" style="margin:0 0 4px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#666666">Gift voucher${v.recipientName ? ` for ${esc(v.recipientName)}` : ''}</p>
+      <p class="ew-title" style="margin:0;font-size:40px;font-weight:800;color:#000562">${formatPence(v.amountPence)}</p>
+      ${v.message ? `<p style="margin:12px 0 0;font-style:italic">“${esc(v.message)}”</p>` : ''}
+      <p style="margin:16px 0 4px;font-size:13px">Voucher code</p>
+      <p class="ew-title" style="margin:0;font-size:24px;font-weight:800;letter-spacing:3px;color:#000562;font-family:Menlo,Consolas,monospace">${esc(v.code)}</p>
+      ${v.until ? `<p class="ew-muted" style="margin:10px 0 0;font-size:13px;color:#666666">Use by ${esc(v.until)}</p>` : ''}
+    </div>`;
+  await sendEmail({
+    to,
+    subject: v.forBuyer ? 'Your Eir & Wild gift voucher' : `${v.buyerName} has sent you an Eir & Wild gift voucher`,
+    html: layout(v.forBuyer ? `Thank you, ${v.buyerName}!` : `A gift for ${who}!`, `
+      ${intro}
+      ${voucherCard}
+      <p>To use it, choose a class, course or pass at <a class="ew-link" href="${appUrl()}" style="color:#000562">book.eirandwild.co.uk</a> and enter the code when booking. It can be spent over several bookings.</p>
+      ${button(appUrl(), 'Book a class')}
+      <p>Lara x</p>`),
   });
 }

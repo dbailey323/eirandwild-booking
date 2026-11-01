@@ -22,6 +22,7 @@ export function BookingForm({
   withPolicy = true,
   policy,
   defaults = {},
+  withVoucher = false,
 }: {
   action: (state: FormState, form: FormData) => Promise<FormState>;
   hidden: Record<string, string | number>;
@@ -29,6 +30,7 @@ export function BookingForm({
   withPolicy?: boolean;
   policy?: React.ReactNode;
   defaults?: { name?: string; email?: string; phone?: string };
+  withVoucher?: boolean;
 }) {
   const [state, formAction] = useActionState(action, {});
   if (state.ok) return <p className="alert ok">{state.ok}</p>;
@@ -52,6 +54,15 @@ export function BookingForm({
           <input type="tel" name="phone" autoComplete="tel" defaultValue={defaults.phone} />
         </label>
       </div>
+      {withVoucher && (
+        <details className="voucher-field">
+          <summary>Got a gift voucher?</summary>
+          <label>
+            Gift voucher code
+            <input type="text" name="voucher" placeholder="EW-XXXX-XXXX" autoComplete="off" autoCapitalize="characters" />
+          </label>
+        </details>
+      )}
       <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: '-9999px' }} />
       {withPolicy && (
         <label className="check">

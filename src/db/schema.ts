@@ -91,12 +91,14 @@ export const bookings = pgTable(
     status: text('status').notNull().default('pending'),
     amountPence: integer('amount_pence').notNull(),
     refundedPence: integer('refunded_pence').notNull().default(0),
-    // stripe | free | cash | manual | pass
+    // stripe | free | cash | manual | pass | voucher (paid in full by gift voucher)
     paymentMethod: text('payment_method').notNull().default('stripe'),
     stripeCheckoutId: text('stripe_checkout_id'),
     stripePaymentIntentId: text('stripe_payment_intent_id'),
     // The client's pass that paid for this booking (paymentMethod 'pass')
     passId: text('pass_id'),
+    // Part of amountPence paid by gift voucher; the rest is paid by card
+    voucherPence: integer('voucher_pence').notNull().default(0),
     // Secret used in the "manage your booking" link sent by email
     manageToken: text('manage_token').notNull().unique(),
     holdExpiresAt: timestamp('hold_expires_at', { withTimezone: true }),
@@ -189,10 +191,12 @@ export const customerPasses = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     amountPence: integer('amount_pence').notNull(),
     refundedPence: integer('refunded_pence').notNull().default(0),
-    // stripe | free | cash | manual
+    // stripe | free | cash | manual | voucher
     paymentMethod: text('payment_method').notNull().default('stripe'),
     stripeCheckoutId: text('stripe_checkout_id'),
     stripePaymentIntentId: text('stripe_payment_intent_id'),
+    // Part of amountPence paid by gift voucher
+    voucherPence: integer('voucher_pence').notNull().default(0),
     notes: text('notes').notNull().default(''),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     activatedAt: timestamp('activated_at', { withTimezone: true }),
@@ -208,3 +212,47 @@ export const customerLoginTokens = pgTable('customer_login_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
 });
+
+// ---------------------------------------------------------------- Stage 3: gift vouchers
+
+// A gift voucher with a money balance that can be spent on classes, courses and passes
+export const giftVouchers = pgTable('gift_vouchers', {
+  id: text('id').primaryKey(),
+  // What the recipient types in, e.g. EW-7KQ2-M9XD
+  code: text('code').notNull().unique(),
+  amountPence: integer('amount_pence').notNull(),
+  balancePence: integer('balance_pence').notNull(),
+  // pending (awaiting payment) | active | cancelled | expired (unpaid checkout)
+  status: text('status').notNull().default('pending'),
+  buyerName: text('buyer_name').notNull(),
+  buyerEmail: text('buyer_email').notNull(),
+  recipientName: text('recipient_name').notNull().default(''),
+  // When set, the voucher is emailed straight to the recipient as well as the buyer
+  recipientEmail: text('recipient_email').notNull().default(''),
+  message: text('message').notNull().default(''),
+  // stripe | free | cash | manual
+  paymentMethod: text('payment_method').notNull().default('stripe'),
+  stripeCheckoutId: text('stripe_checkout_id'),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  notes: text('notes').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  activatedAt: timestamp('activated_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+});
+
+// Each time a voucher pays towards a booking or a pass
+export const voucherRedemptions = pgTable(
+  'voucher_redemptions',
+  {
+    id: serial('id').primaryKey(),
+    voucherId: text('voucher_id').notNull().references(() => giftVouchers.id),
+    bookingId: text('booking_id'),
+    passId: text('pass_id'),
+    amountPence: integer('amount_pence').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Set when the money goes back on the voucher (unpaid checkout or a refund)
+    reversedAt: timestamp('reversed_at', { withTimezone: true }),
+  },
+  (t) => [index('voucher_redemptions_voucher_idx').on(t.voucherId)],
+);

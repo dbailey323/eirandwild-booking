@@ -20,6 +20,8 @@ export async function GET(request: Request) {
     startAt: session.startsAt.toISOString(),
     endAt: session.endsAt.toISOString(),
     venue: location ? (location.online ? 'Online' : location.name) : '',
+    address: location && !location.online ? location.address : '',
+    online: !!location?.online,
     spacesLeft,
     pricePence: session.pricePence,
     courseId: course?.id ?? null,

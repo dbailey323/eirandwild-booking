@@ -2,7 +2,8 @@ import type Stripe from 'stripe';
 import { getDb } from '@/db';
 import { confirmBooking, describeBooking, expireBooking } from '@/lib/booking';
 import { sendBookingConfirmed } from '@/lib/email';
-import { notifyPassReady, notifyWaitlist, safely } from '@/lib/notify';
+import { notifyPassReady, notifyVoucherReady, notifyWaitlist, safely } from '@/lib/notify';
+import { activateVoucher, expireVoucherPurchase } from '@/lib/vouchers';
 import { activatePass, expirePassPurchase } from '@/lib/passes';
 import { stripe } from '@/lib/stripe';
 
@@ -36,13 +37,19 @@ export async function POST(request: Request) {
       const { changed } = await activatePass(db, passId, { paymentIntentId });
       if (changed) await notifyPassReady(db, passId);
     }
+    const voucherId = checkout.metadata?.voucher_id;
+    if (voucherId && checkout.payment_status === 'paid') {
+      const { changed } = await activateVoucher(db, voucherId, { paymentIntentId });
+      if (changed) await notifyVoucherReady(db, voucherId);
+    }
   } else if (event.type === 'checkout.session.expired') {
-    const { booking_id: bookingId, pass_id: passId } = event.data.object.metadata ?? {};
+    const { booking_id: bookingId, pass_id: passId, voucher_id: voucherId } = event.data.object.metadata ?? {};
     if (bookingId) {
       const freed = await expireBooking(db, bookingId);
       await notifyWaitlist(db, freed);
     }
     if (passId) await expirePassPurchase(db, passId);
+    if (voucherId) await expireVoucherPurchase(db, voucherId);
   }
   return Response.json({ received: true });
 }

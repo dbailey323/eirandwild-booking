@@ -2,7 +2,7 @@
 
 Lara's own booking system for Eir & Wild classes, courses and baby massage, at **book.eirandwild.co.uk**.
 
-**Stage 1** covers pay-as-you-go classes, courses, card payments, waiting lists, emails and Lara's admin area. **Stage 2** adds class passes, term passes, PT memberships and client accounts. Gift vouchers and moving clients over from Bookwhen come in Stage 3, and Bookwhen stays live until everything is tested.
+**Stage 1** covers pay-as-you-go classes, courses, card payments, waiting lists, emails and Lara's admin area. **Stage 2** adds class passes, term passes, PT memberships and client accounts. **Stage 3** adds gift vouchers, importing clients from Bookwhen, and a switch for the main website. Bookwhen stays live until everything is tested: see the switchover checklist below.
 
 ## What it does
 
@@ -18,6 +18,7 @@ Lara's own booking system for Eir & Wild classes, courses and baby massage, at *
 - Reminder email the day before each class.
 - **Passes** at `/passes`: buy a class pass (e.g. 5 classes in 90 days) or a term pass (between set dates) by card.
 - **Client accounts** at `/account`, signed in by an emailed link with no password: see your passes (classes left, use-by date) and upcoming bookings.
+- **Gift vouchers** at `/gift`: buy a voucher (£10, £25, £50 or any amount from £5 to £500) with a message, emailed to the buyer and optionally straight to the recipient. Vouchers last 12 months and can be spent over several bookings on classes, courses and passes, paying all or part of the price. Anyone can check a voucher's balance on the same page.
 - **Book with my pass**: signed-in clients with a pass that covers a class book it in one tap. Cancelling at least 4 hours before puts the class back on the pass.
 
 **For Lara** (at `/admin`, signed in by an emailed link with no password)
@@ -29,6 +30,10 @@ Lara's own booking system for Eir & Wild classes, courses and baby massage, at *
 - **Passes**: add pass types (price, number of classes or unlimited, how long they last or set term dates, which classes they cover) and put them on or off sale.
 - **Clients**: search clients, see their passes and bookings, give someone a pass (a prize, a PT membership, or one paid in cash), change a pass's classes or end date, or cancel a pass with an optional refund.
 - Add someone to a class using their pass.
+- **Vouchers**: search vouchers by code, buyer or recipient; see where each was spent; create a voucher (prize, raffle, cash); change its balance or date; email it again; or cancel it with an optional refund.
+- **Import clients** from a Bookwhen CSV export (Clients → Import), with a preview first. People already here aren't duplicated or changed, so it can be run again just before switching.
+- **Move a Bookwhen pass over**: give the client the matching pass with their classes left and end date.
+- Cancellations put gift voucher money back on the voucher on the same terms as card refunds.
 
 **For the main website**
 - `GET /api/public/schedule` returns upcoming classes with spaces left, so eirandwild.co.uk can show live dates from here instead of Bookwhen.
@@ -77,8 +82,15 @@ After changing `src/db/schema.ts`, run `npm run db:generate` to create a new mig
 
 The first build adds Lara's Bookwhen passes: the Womanhood 5-class (£30, 90 days) and 10-class (£60, 180 days) passes for Dance & Tone, Strong & Stretched and online HIIT (not Monday Double), and three PT memberships with unlimited online HIIT for 28 days (£95, £110, £180), which are not on sale and are given from a client's page. Motherhood term passes are added each term in **Admin → Passes**.
 
-## Still to come (Stage 3)
+## Switching over from Bookwhen
 
-- Gift vouchers.
-- Importing clients from Bookwhen.
-- Switching eirandwild.co.uk to show dates from this site instead of Bookwhen.
+Bookwhen stays live while this is tested. When Lara is happy:
+
+1. **Stripe**: add Lara's live Stripe keys and webhook (see *Setting it up*), and make one real £1 test booking and refund.
+2. **Classes**: add the classes and courses from the switchover date onwards in **Admin → Add classes**, with the right spaces. Take Bookwhen dates after the switchover off sale.
+3. **Clients**: export clients from Bookwhen and import them (**Clients → Import**).
+4. **Passes**: for each client with a Bookwhen pass, give them the same pass with their classes left and end date (**Client → Give a pass → Moving a pass over from Bookwhen**). Any term passes need adding in **Passes** first.
+5. **Bookings already made** in Bookwhen for dates after the switchover: add those people to the new classes (**Add someone**, paid by "Other", note "Bookwhen"), or keep Bookwhen running until those dates have passed.
+6. **Main website**: in the eirandwild.co.uk Vercel project, add the environment variable `SCHEDULE_SOURCE` = `eirandwild` and redeploy. Date buttons then link straight to this site. Remove it to switch back to Bookwhen at any time.
+7. **Privacy page**: update eirandwild.co.uk/privacy to say bookings are taken on book.eirandwild.co.uk (hosted by Vercel, data stored with Neon, emails sent by Resend) instead of Bookwhen.
+8. Tell clients: one email or post explaining the new booking site, accounts and passes.

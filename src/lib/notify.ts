@@ -1,7 +1,8 @@
 import { inArray } from 'drizzle-orm';
 import { classTypes } from '@/db/schema';
 import { getCourse, getSession, takeWaitlistForFreedSessions, type Db } from './booking';
-import { sendPassConfirmed, sendWaitlistSpace } from './email';
+import { sendGiftVoucher, sendPassConfirmed, sendWaitlistSpace } from './email';
+import { getVoucher } from './vouchers';
 import { getPassDetail } from './passes';
 import { creditsText, listNames } from './passText';
 import { appUrl } from './stripe';
@@ -62,6 +63,18 @@ export async function passLeftText(db: Db, passId: string | null): Promise<strin
 }
 
 // The last day a pass can be used, e.g. "Sat 30 Jan" (expiresAt is midnight after it)
-export function passEndText(expiresAt: Date | null): string | null {
-  return expiresAt ? formatDayShort(new Date(expiresAt.getTime() - 60000)) : null;
+export function passEndText(expiresAt: Date | null, withYear = false): string | null {
+  if (!expiresAt) return null;
+  const lastDay = new Date(expiresAt.getTime() - 60000);
+  return withYear ? `${formatDayShort(lastDay)} ${lastDay.toLocaleDateString('en-GB', { year: 'numeric', timeZone: 'Europe/London' })}` : formatDayShort(lastDay);
+}
+
+// Emails a gift voucher to the buyer, and to the recipient if they gave an email address
+export async function notifyVoucherReady(db: Db, voucherId: string, opts: { toBuyer?: boolean } = {}) {
+  const found = await getVoucher(db, voucherId);
+  if (!found || found.voucher.status !== 'active') return;
+  const v = found.voucher;
+  const details = { buyerName: v.buyerName, recipientName: v.recipientName, code: v.code, amountPence: v.amountPence, message: v.message, until: passEndText(v.expiresAt, true) };
+  if (opts.toBuyer !== false) await safely(() => sendGiftVoucher(v.buyerEmail, { ...details, forBuyer: true }));
+  if (v.recipientEmail && v.recipientEmail !== v.buyerEmail) await safely(() => sendGiftVoucher(v.recipientEmail, { ...details, forBuyer: false }));
 }

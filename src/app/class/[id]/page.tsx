@@ -92,6 +92,7 @@ export default async function ClassPage({ params }: Props) {
             <p className="muted">You'll pay securely by card on the next page. Free cancellation up to {PAYG_CANCEL_HOURS} hours before the class.</p>
             <BookingForm
               action={bookSession}
+              withVoucher
               hidden={{ sessionId: session.id }}
               defaults={client ? { name: client.name, email: client.email, phone: client.phone } : {}}
               submitLabel={`Continue to payment · ${formatPence(session.pricePence ?? 0)}`}

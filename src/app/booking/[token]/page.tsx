@@ -54,7 +54,11 @@ export default async function BookingPage({ params, searchParams }: Props) {
           {byPass ? (
             <li><strong>Paid with:</strong> your class pass</li>
           ) : (
-            <li><strong>Amount:</strong> {formatPence(booking.amountPence)}{booking.refundedPence > 0 ? ` (refunded ${formatPence(booking.refundedPence)})` : ''}</li>
+            <li>
+              <strong>Amount:</strong> {formatPence(booking.amountPence)}
+              {booking.voucherPence > 0 && ` (${formatPence(booking.voucherPence)} by gift voucher)`}
+              {booking.refundedPence > 0 ? ` (refunded ${formatPence(booking.refundedPence)})` : ''}
+            </li>
           )}
         </ul>
       </article>
@@ -69,6 +73,8 @@ export default async function BookingPage({ params, searchParams }: Props) {
                 : "It's now less than 4 hours before the class, so the class won't go back on your pass. You can still cancel to free your space for someone else."
               : booking.amountPence === 0
                 ? 'You can cancel at any time before the class to free your space for someone else.'
+                : refundable && booking.voucherPence > 0
+                  ? `You can cancel until ${formatDayShort(refundDeadline)} at ${formatTime(refundDeadline)} for a full refund (gift voucher money goes back on your voucher).`
                 : refundable
                   ? `You can cancel for a full refund until ${formatDayShort(refundDeadline)} at ${formatTime(refundDeadline)}.`
                   : 'The refund period has passed, so cancelling now will not be refunded. You can still cancel to free your space for someone else.'}

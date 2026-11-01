@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { REFUND_POLICY } from '@/lib/policy';
+import { PASS_POLICY, REFUND_POLICY, VOUCHER_POLICY } from '@/lib/policy';
 
 export const metadata: Metadata = { title: 'Booking & refund policy' };
 
@@ -16,7 +16,14 @@ export default function PoliciesPage() {
             <li key={line}>{line}</li>
           ))}
         </ul>
-        <p>You can cancel using the link in your confirmation email. Eligible refunds go back to your card automatically.</p>
+        <p>
+          You can cancel using the link in your confirmation email, or from your account. Eligible refunds go back to your card automatically, and anything
+          paid by gift voucher goes back on the voucher.
+        </p>
+        <h2>Passes</h2>
+        <p>{PASS_POLICY}</p>
+        <h2>Gift vouchers</h2>
+        <p>{VOUCHER_POLICY}</p>
         <h2>Courses</h2>
         <p>
           Missed course sessions can't be refunded or transferred, but you're welcome to attend another class within the course if there's space. Just
