@@ -1,7 +1,9 @@
 // Lara's booking rules, in one place.
 
-// How long a place is held while someone pays (Stripe's minimum checkout lifetime)
-export const HOLD_MINUTES = 30;
+// Stripe checkouts must stay open for at least 30 minutes; the place is held a little
+// longer than the checkout so it can never be released while someone is still paying
+export const CHECKOUT_MINUTES = 31;
+export const HOLD_MINUTES = 33;
 
 // Refunds: pay-as-you-go needs 4 hours' notice; courses need 48 hours before the course starts
 export const PAYG_CANCEL_HOURS = 4;

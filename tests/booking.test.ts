@@ -95,7 +95,7 @@ describe('session bookings', () => {
     const s = danceSessions[0];
     const a = await createSessionBooking(db, { sessionId: s.id, customer: alice, now: NOW });
     await createSessionBooking(db, { sessionId: s.id, customer: bea, now: NOW });
-    const later = new Date(NOW.getTime() + 31 * 60000);
+    const later = new Date(NOW.getTime() + 34 * 60000);
     expect((await getSession(db, s.id, later))!.spacesLeft).toBe(2);
     expect(await expireBooking(db, a.id)).toEqual([s.id]);
     expect((await getSession(db, s.id, NOW))!.spacesLeft).toBe(1);

@@ -1,0 +1,424 @@
+/* Eir & Wild bookings — matches the main website's look */
+
+@font-face {
+  font-family: 'Moon Time';
+  src: url('/fonts/moon-time-regular.ttf') format('truetype');
+  font-display: swap;
+}
+
+:root {
+  --navy: #000562;
+  --gold: #ffd700;
+  --teal: #7ae1d5;
+  --teal-dark: #64cdbf;
+  --bronze: #8b7355;
+  --ink: #333333;
+  --muted: #666666;
+  --line: #e0e8e6;
+  --bg: #f7faf9;
+  --red: #c8102e;
+  --green: #128c4a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Montserrat', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+  line-height: 1.6;
+}
+
+a {
+  color: var(--navy);
+}
+
+h1,
+h2,
+h3 {
+  color: var(--navy);
+  line-height: 1.2;
+  margin: 0 0 0.5em;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* Header & footer */
+.site-header {
+  background: var(--navy);
+}
+
+.site-header .container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 68px;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: #fff;
+  text-decoration: none;
+}
+
+.brand-name {
+  font-family: 'Moon Time', cursive;
+  font-size: 2rem;
+  color: var(--gold);
+}
+
+.brand-sub {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.header-link {
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.site-footer {
+  margin-top: 48px;
+  padding: 28px 0 40px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* Hero */
+.hero {
+  background: var(--navy);
+  border-radius: 16px;
+  padding: 30px 22px;
+  margin: 24px 0;
+  text-align: center;
+  color: #fff;
+}
+
+.hero h1 {
+  font-family: 'Moon Time', cursive;
+  font-weight: normal;
+  font-size: 3rem;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+.hero p {
+  margin: 0 auto;
+  max-width: 560px;
+}
+
+/* Filters */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.chip {
+  padding: 8px 16px;
+  border: 2px solid var(--navy);
+  border-radius: 30px;
+  background: #fff;
+  color: var(--navy);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.chip[aria-current='true'] {
+  background: var(--navy);
+  color: var(--gold);
+}
+
+/* Schedule */
+.day {
+  margin-bottom: 26px;
+}
+
+.day h2 {
+  font-size: 1.05rem;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--line);
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: 78px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--navy);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.slot-time {
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.slot-title {
+  display: block;
+  font-weight: 700;
+}
+
+.slot-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.slot-action {
+  text-align: right;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.low {
+  color: var(--red);
+  font-weight: 700;
+}
+
+.full {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+@media (max-width: 560px) {
+  .slot {
+    grid-template-columns: 1fr auto;
+  }
+
+  .slot-time {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Cards & forms */
+.card {
+  background: #fff;
+  border: 2px solid var(--navy);
+  border-radius: 16px;
+  padding: 24px 22px;
+  margin-bottom: 22px;
+}
+
+.card.soft {
+  border: 1px solid var(--line);
+}
+
+.facts {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.facts strong {
+  color: var(--navy);
+}
+
+.price {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--navy);
+}
+
+label {
+  display: block;
+  margin-bottom: 14px;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+input[type='text'],
+input[type='email'],
+input[type='tel'],
+input[type='date'],
+input[type='time'],
+input[type='number'],
+select,
+textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px solid #c9d3d1;
+  border-radius: 10px;
+  font: inherit;
+  background: #fff;
+}
+
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-weight: 500;
+}
+
+.check input {
+  margin-top: 5px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 13px 26px;
+  border: 0;
+  border-radius: 30px;
+  background: var(--teal);
+  color: var(--navy);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--teal-dark);
+}
+
+.btn.navy {
+  background: var(--navy);
+  color: var(--gold);
+}
+
+.btn.danger {
+  background: #fff;
+  border: 2px solid var(--red);
+  color: var(--red);
+}
+
+.btn.small {
+  padding: 8px 14px;
+  font-size: 0.8rem;
+}
+
+.btn[disabled] {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.alert {
+  padding: 14px 16px;
+  border-radius: 12px;
+  margin-bottom: 18px;
+  font-weight: 600;
+}
+
+.alert.error {
+  background: #fdecee;
+  color: var(--red);
+}
+
+.alert.ok {
+  background: #e3f9eb;
+  color: var(--green);
+}
+
+.alert.info {
+  background: #eef0fb;
+  color: var(--navy);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.dates {
+  padding-left: 18px;
+}
+
+/* Admin */
+.admin-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.table th,
+.table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  font-size: 0.75rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+@media (max-width: 560px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .table .hide-sm {
+    display: none;
+  }
+}
+
+details.panel {
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+details.panel summary {
+  padding: 14px 16px;
+  font-weight: 700;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+details.panel > div {
+  padding: 0 16px 16px;
+}
