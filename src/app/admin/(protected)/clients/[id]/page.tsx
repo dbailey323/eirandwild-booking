@@ -6,10 +6,11 @@ import { classTypes, customers } from '@/db/schema';
 import { formatPence } from '@/lib/money';
 import { passEndText } from '@/lib/notify';
 import { customerBookings, customerPassList, listPassTypes } from '@/lib/passes';
+import { listSessions } from '@/lib/booking';
 import { PASS_STATE_LABEL, listNames, passSummary } from '@/lib/passText';
-import { formatDayShort, formatTime, londonDateKey } from '@/lib/time';
+import { addLondonDays, formatDayShort, formatTime, londonDateKey } from '@/lib/time';
 import { Flash } from '@/components/Flash';
-import { adjustPassAction, cancelPassAction, grantPassAction, updateClientAction } from '@/app/admin/actions';
+import { addBookingAction, adjustPassAction, cancelPassAction, grantPassAction, updateClientAction } from '@/app/admin/actions';
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; error?: string }> };
 
@@ -28,6 +29,10 @@ export default async function AdminClientPage({ params, searchParams }: Props) {
     listPassTypes(db),
     db.select().from(classTypes),
   ]);
+  // Upcoming classes they could be booked onto (not course-only sessions or ones they're on)
+  const bookedIds = new Set(rows.filter((r) => r.booking.status === 'confirmed' && r.registration.status === 'active').map((r) => r.session.id));
+  const bookable = (await listSessions(db, { from: now, to: addLondonDays(now, 42) })).filter((i) => i.session.pricePence !== null && !bookedIds.has(i.session.id));
+  const hasPass = passes.some((p) => p.usable);
   const className = new Map(classes.map((c) => [c.id, c.name]));
   const upcoming = rows.filter((r) => r.session.startsAt > now).reverse();
   const past = rows.filter((r) => r.session.startsAt <= now).slice(0, 30);
@@ -156,6 +161,45 @@ export default async function AdminClientPage({ params, searchParams }: Props) {
             <button className="btn navy" type="submit">Give pass</button>
           </form>
           {types.length === 0 && <p className="muted">Add a pass on the <Link href="/admin/passes">Passes</Link> page first.</p>}
+        </div>
+      </details>
+
+      <details className="panel">
+        <summary>Book {customer.name} onto a class</summary>
+        <div>
+          {bookable.length === 0 ? (
+            <p className="muted">No upcoming classes to book.</p>
+          ) : (
+            <form action={addBookingAction}>
+              <input type="hidden" name="customerId" value={id} />
+              <input type="hidden" name="returnTo" value={`/admin/clients/${id}`} />
+              <label>
+                Class
+                <select name="sessionId" required>
+                  {bookable.map((i) => (
+                    <option key={i.session.id} value={i.session.id} disabled={i.spacesLeft === 0}>
+                      {formatDayShort(i.session.startsAt)} {formatTime(i.session.startsAt)} · {i.classType.name}{i.spacesLeft === 0 ? ' (full)' : ` (${i.spacesLeft} left)`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid-2">
+                <label>
+                  How they paid
+                  <select name="method" defaultValue={hasPass ? 'pass' : 'cash'}>
+                    <option value="cash">Cash / bank transfer</option>
+                    <option value="pass">Use their pass</option>
+                    <option value="free">Free (gift, prize, make-up)</option>
+                    <option value="manual">Other</option>
+                  </select>
+                </label>
+                <label>Amount £ (optional)<input type="text" name="amount" inputMode="decimal" /></label>
+              </div>
+              <label>Note (optional)<input type="text" name="notes" /></label>
+              <label className="check"><input type="checkbox" name="notify" defaultChecked /> Send them a confirmation email</label>
+              <button className="btn navy" type="submit">Book</button>
+            </form>
+          )}
         </div>
       </details>
 

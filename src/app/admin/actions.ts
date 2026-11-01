@@ -16,9 +16,11 @@ import {
   getBooking,
   moveRegistration,
   setAttended,
+  findOrAddCustomer,
+  register,
   upsertCustomer,
 } from '@/lib/booking';
-import { adjustPass, bookWithPass, cancelPass, createPassType, grantPass, setPassTypeOnSale } from '@/lib/passes';
+import { adjustPass, bookWithPass, cancelPass, createPassType, grantPass, passesForSession, searchCustomers, setPassTypeOnSale } from '@/lib/passes';
 import { sendAdminLoginLink, sendBookingCancelled, sendBookingConfirmed, sendClassCancelled } from '@/lib/email';
 import { poundsToPence } from '@/lib/money';
 import { notifyPassReady, notifyVoucherReady, notifyWaitlist, passLeftText, safely } from '@/lib/notify';
@@ -187,15 +189,21 @@ export async function cancelBookingAction(form: FormData) {
 export async function addBookingAction(form: FormData) {
   await requireAdmin();
   const sessionId = num(form, 'sessionId');
+  // Lara can add someone from the class page or from a client's page
+  const returnTo = str(form, 'returnTo').startsWith('/admin/') ? str(form, 'returnTo') : `/admin/class/${sessionId}`;
   const db = getDb();
   const method = (str(form, 'method') || 'cash') as 'cash' | 'free' | 'manual' | 'pass';
-  const customer = { name: str(form, 'name'), email: str(form, 'email'), phone: str(form, 'phone') };
+  const customerId = optionalId(form, 'customerId');
+  const details = { name: str(form, 'name'), email: str(form, 'email'), phone: str(form, 'phone') };
   try {
+    if (!sessionId) throw new Error('Choose a class');
+    if (!customerId && !details.email) throw new Error('Choose a client, or enter a new client’s details');
+    const clientId = customerId ?? (await findOrAddCustomer(db, details)).id;
     const booking = method === 'pass'
-      ? await bookWithPass(db, { sessionId, customerId: (await upsertCustomer(db, customer)).id, byAdmin: true })
+      ? await bookWithPass(db, { sessionId, customerId: clientId, byAdmin: true })
       : await addManualBooking(db, {
           sessionId,
-          customer,
+          customerId: clientId,
           method,
           amountPence: str(form, 'amount') ? poundsToPence(str(form, 'amount')) : 0,
           notes: str(form, 'notes'),
@@ -206,10 +214,36 @@ export async function addBookingAction(form: FormData) {
       if (desc) await safely(() => sendBookingConfirmed(desc, left));
     }
   } catch (error) {
-    back(`/admin/class/${sessionId}`, { error: errorText(error) });
+    back(returnTo, { error: errorText(error) });
   }
-  revalidatePath(`/admin/class/${sessionId}`);
-  back(`/admin/class/${sessionId}`, { ok: method === 'pass' ? 'Booked with their pass' : 'Booking added' });
+  revalidatePath(returnTo);
+  back(returnTo, { ok: method === 'pass' ? 'Booked with their pass' : 'Booking added' });
+}
+
+// Client search for the "Add someone" box: matching clients, whether they're already
+// booked on this class, and the pass they'd use for it
+export async function findClientsForClass(query: string, sessionId: number) {
+  await requireAdmin();
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const db = getDb();
+  const [session] = await db.select().from(sessions).where(eq(sessions.id, sessionId));
+  const clients = await searchCustomers(db, q, 8);
+  const booked = new Set(session ? (await register(db, sessionId)).map((r) => r.customer.id) : []);
+  return Promise.all(
+    clients.map(async (c) => {
+      const passes = session ? await passesForSession(db, c.id, session) : [];
+      const p = passes[0];
+      return {
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        phone: c.phone,
+        booked: booked.has(c.id),
+        pass: p ? `${p.type.name} (${p.creditsLeft === null ? 'unlimited' : `${p.creditsLeft} left`})` : null,
+      };
+    }),
+  );
 }
 
 export async function moveBookingAction(form: FormData) {

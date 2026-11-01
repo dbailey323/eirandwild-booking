@@ -263,3 +263,19 @@ describe('admin tools', () => {
     expect(created.map((s) => formatTime24(s.startsAt))).toEqual(['18:30', '18:30']);
   });
 });
+
+describe('Lara adding an existing client', () => {
+  it('books them by id without changing their details', async () => {
+    const { db, danceSessions } = await setup();
+    const { upsertCustomer, findOrAddCustomer } = await import('@/lib/booking');
+    const client = await upsertCustomer(db, { name: 'Alice Original', email: 'alice@example.com', phone: '' });
+    const booking = await addManualBooking(db, { sessionId: danceSessions[0].id, customerId: client.id, method: 'cash', amountPence: 700, now: NOW });
+    expect(booking.customerId).toBe(client.id);
+    // Typing an existing email with a different name finds the client and keeps their name
+    const again = await findOrAddCustomer(db, { name: 'alice', email: 'ALICE@example.com', phone: '07000 111111' });
+    expect(again.id).toBe(client.id);
+    const [row] = await register(db, danceSessions[0].id);
+    expect(row.customer.name).toBe('Alice Original');
+    await expect(addManualBooking(db, { sessionId: danceSessions[0].id, customerId: client.id, method: 'cash', now: NOW })).rejects.toThrow(/already booked/);
+  });
+});

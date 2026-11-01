@@ -173,6 +173,20 @@ export async function upsertCustomer(db: Db, input: CustomerInput) {
   return customer;
 }
 
+// For Lara adding someone: finds the client by email, or adds them. Unlike upsertCustomer
+// it never changes an existing client's name (only fills in a missing phone number).
+export async function findOrAddCustomer(db: Db, input: CustomerInput) {
+  const email = cleanEmail(input.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BookingError('invalid_email', 'Please enter a valid email address.');
+  const [existing] = await db.select().from(customers).where(eq(customers.email, email));
+  if (existing) {
+    const phone = (input.phone ?? '').trim();
+    if (!existing.phone && phone) await db.update(customers).set({ phone }).where(eq(customers.id, existing.id));
+    return existing;
+  }
+  return upsertCustomer(db, input);
+}
+
 // ---------------------------------------------------------------- booking
 
 // voucherPence: the part of amountPence a gift voucher has already paid
@@ -513,13 +527,24 @@ export async function setAttended(db: Db, registrationId: number, attended: bool
 // Lara adds someone herself (paid cash, a gift, a make-up session...)
 export async function addManualBooking(
   db: Db,
-  input: { sessionId: number; customer: CustomerInput; method: 'cash' | 'free' | 'manual'; amountPence?: number; notes?: string; now?: Date },
+  input: {
+    sessionId: number;
+    // An existing client, or details for someone new
+    customerId?: number;
+    customer?: CustomerInput;
+    method: 'cash' | 'free' | 'manual';
+    amountPence?: number;
+    notes?: string;
+    now?: Date;
+  },
 ) {
   const now = input.now ?? new Date();
   return db.transaction(async (tx) => {
     const [session] = await tx.select().from(sessions).where(eq(sessions.id, input.sessionId)).for('update');
     if (!session) throw new BookingError('not_found', 'Class not found');
-    const customer = await upsertCustomer(tx, input.customer);
+    const [found] = input.customerId ? await tx.select().from(customers).where(eq(customers.id, input.customerId)) : [];
+    if (input.customerId && !found) throw new BookingError('not_found', 'Client not found');
+    const customer = found ?? (await findOrAddCustomer(tx, input.customer ?? { name: '', email: '' }));
     await assertNotAlreadyBooked(tx, customer.id, [session.id], now);
     const [booking] = await tx
       .insert(bookings)

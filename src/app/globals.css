@@ -561,3 +561,64 @@ legend {
   letter-spacing: 3px;
   color: var(--navy);
 }
+
+/* Admin: finding a client to add to a class */
+.client-results {
+  list-style: none;
+  margin: -6px 0 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.client-results button {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.client-results button:hover,
+.client-results button:focus-visible {
+  background: #eef9f7;
+}
+
+.client-results button[disabled] {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.picked {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 2px solid var(--teal);
+  border-radius: 12px;
+}
+
+.pass-note {
+  color: #0b7a6e;
+  font-weight: 600;
+}
+
+.linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--navy);
+  text-decoration: underline;
+  cursor: pointer;
+}

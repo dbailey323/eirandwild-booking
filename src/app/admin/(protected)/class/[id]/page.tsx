@@ -7,8 +7,8 @@ import { getSession, register } from '@/lib/booking';
 import { formatPence } from '@/lib/money';
 import { formatDay, formatDayShort, formatTime, formatTimeRange } from '@/lib/time';
 import { Flash } from '@/components/Flash';
+import { AddSomeoneForm } from '@/components/AddSomeoneForm';
 import {
-  addBookingAction,
   attendedAction,
   cancelBookingAction,
   cancelSessionAction,
@@ -141,29 +141,8 @@ export default async function AdminClassPage({ params, searchParams }: Props) {
           <details className="panel">
             <summary>Add someone</summary>
             <div>
-              <form action={addBookingAction}>
-                <input type="hidden" name="sessionId" value={id} />
-                <label>Name<input type="text" name="name" required /></label>
-                <div className="grid-2">
-                  <label>Email<input type="email" name="email" required /></label>
-                  <label>Mobile<input type="tel" name="phone" /></label>
-                </div>
-                <div className="grid-2">
-                  <label>
-                    How they paid
-                    <select name="method" defaultValue="cash">
-                      <option value="cash">Cash / bank transfer</option>
-                      <option value="pass">Use their pass</option>
-                      <option value="free">Free (gift, prize, make-up)</option>
-                      <option value="manual">Other</option>
-                    </select>
-                  </label>
-                  <label>Amount £ (optional)<input type="text" name="amount" inputMode="decimal" /></label>
-                </div>
-                <label>Note (optional)<input type="text" name="notes" /></label>
-                <label className="check"><input type="checkbox" name="notify" defaultChecked /> Send them a confirmation email</label>
-                <button className="btn navy" type="submit">Add to class</button>
-              </form>
+              {/* Starts fresh once someone has been added (the register changes); keeps its state after an error */}
+              <AddSomeoneForm key={people.map((p) => p.registration.id).join("-")} sessionId={id} />
             </div>
           </details>
 
