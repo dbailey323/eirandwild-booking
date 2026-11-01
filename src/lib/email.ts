@@ -35,21 +35,47 @@ function esc(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Light and dark versions are both spelled out, so email apps in dark mode use these
+// colours instead of inverting the navy header into a washed-out lilac
+const EMAIL_STYLES = `
+  :root { color-scheme: light dark; supported-color-schemes: light dark; }
+  .ew-header { background:#000562 !important; }
+  @media (prefers-color-scheme: dark) {
+    .ew-body { background:#11121a !important; }
+    .ew-card { background:#1d1e2b !important; border-color:#2c2e40 !important; }
+    .ew-text, .ew-text p, .ew-text li { color:#e8e8f0 !important; }
+    .ew-title { color:#FFD700 !important; }
+    .ew-muted { color:#a9abbd !important; }
+    .ew-btn { background:#FFD700 !important; color:#000562 !important; }
+    .ew-link { color:#7ae1d5 !important; }
+  }
+  [data-ogsc] .ew-body { background:#11121a !important; }
+  [data-ogsc] .ew-card { background:#1d1e2b !important; }
+  [data-ogsc] .ew-title { color:#FFD700 !important; }
+  [data-ogsc] .ew-btn { background:#FFD700 !important; color:#000562 !important; }
+`;
+
 function layout(title: string, body: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#f7faf9;font-family:Montserrat,Arial,sans-serif;color:#333">
+  return `<!doctype html><html lang="en-GB"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark"><meta name="supported-color-schemes" content="light dark">
+<style>${EMAIL_STYLES}</style></head>
+<body class="ew-body" style="margin:0;padding:0;background:#f7faf9;font-family:Montserrat,Arial,Helvetica,sans-serif;color:#333333">
 <div style="max-width:560px;margin:0 auto;padding:24px 16px">
-  <div style="background:#000562;border-radius:16px 16px 0 0;padding:22px 24px;color:#FFD700;font-size:24px;font-weight:700">Eir &amp; Wild</div>
-  <div style="background:#fff;border:1px solid #e0e8e6;border-top:0;border-radius:0 0 16px 16px;padding:24px">
-    <h1 style="margin:0 0 16px;font-size:20px;color:#000562">${esc(title)}</h1>
+  <div class="ew-header" style="background:#000562;border-radius:16px 16px 0 0;padding:20px 24px;text-align:center">
+    <img src="${appUrl()}/email/logo.png" width="180" alt="Eir &amp; Wild Wellness" style="display:inline-block;width:180px;max-width:100%;height:auto;border:0">
+  </div>
+  <div class="ew-card ew-text" style="background:#ffffff;border:1px solid #e0e8e6;border-top:0;border-radius:0 0 16px 16px;padding:26px 24px;color:#333333;font-size:15px;line-height:1.6">
+    <h1 class="ew-title" style="margin:0 0 16px;font-size:21px;line-height:1.3;color:#000562">${esc(title)}</h1>
     ${body}
   </div>
-  <p style="font-size:12px;color:#888;text-align:center;margin-top:16px">Eir &amp; Wild Wellness, Mountsorrel &amp; Rothley, Leicestershire<br>
+  <p class="ew-muted" style="font-size:12px;line-height:1.6;color:#888888;text-align:center;margin:16px 0 0">Eir &amp; Wild Wellness · Mountsorrel &amp; Rothley, Leicestershire<br>
   Questions? Reply to this email or WhatsApp Lara on 07885 899947.</p>
 </div></body></html>`;
 }
 
 function button(href: string, label: string): string {
-  return `<p style="margin:22px 0"><a href="${href}" style="display:inline-block;background:#000562;color:#FFD700;padding:12px 22px;border-radius:24px;text-decoration:none;font-weight:700">${esc(label)}</a></p>`;
+  return `<p style="margin:24px 0"><a class="ew-btn" href="${href}" style="display:inline-block;background:#000562;color:#FFD700;padding:13px 26px;border-radius:30px;text-decoration:none;font-weight:700;font-size:15px">${esc(label)}</a></p>`;
 }
 
 function sessionList(desc: BookingDescription): string {
@@ -85,7 +111,7 @@ export async function sendBookingConfirmed(desc: BookingDescription) {
       ${venueDetails(desc)}
       ${paid}
       ${button(manageLink(desc), 'View or cancel your booking')}
-      <p style="font-size:13px;color:#666">${REFUND_POLICY.map(esc).join(' ')}</p>
+      <p class="ew-muted" style="font-size:13px;color:#666666">${REFUND_POLICY.map(esc).join(' ')}</p>
       <p>See you soon!<br>Lara x</p>`),
   });
 }
@@ -149,6 +175,6 @@ export async function sendAdminLoginLink(to: string, link: string) {
     html: layout('Sign in to Eir & Wild bookings', `
       <p>Tap the button below to sign in. The link works once and expires in 20 minutes.</p>
       ${button(link, 'Sign in')}
-      <p style="font-size:13px;color:#666">If you didn't ask for this, you can ignore this email.</p>`),
+      <p class="ew-muted" style="font-size:13px;color:#666666">If you didn't ask for this, you can ignore this email.</p>`),
   });
 }
